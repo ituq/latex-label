@@ -765,19 +765,31 @@ void LatexLabel::renderHeading(QPainter& painter, const TextSegment& segment, qr
 void LatexLabel::renderCodeBlock(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight) {
     painter.save();
 
-    // Draw background
-    QColor bgColor(240, 240, 240);
-    painter.fillRect(QRectF(5, y - 5, maxWidth - 10, 100), bgColor); // Approximate height
-
     // Set code font
     QFont font = getFont(segment);
+    QFontMetricsF fm(font);
     painter.setFont(font);
-    painter.setPen(QColor(80, 80, 80));
+    painter.setPen(Qt::white);
 
     x = 10.0; // Indent code block
     y += 10.0;
+    double startY = y;
 
-    // Render code content
+    // Measure total height first
+    qreal tempY = y;
+    for(const auto& child : segment.children) {
+        if(child.type == TextSegmentType::MarkdownText) {
+            QString text = child.content;
+            QStringList lines = text.split('\n');
+            tempY += lines.size() * lineHeight;
+        }
+    }
+
+    // Draw background first
+
+    painter.fillRect(QRectF(5, startY-fm.ascent(), maxWidth - 10, tempY - startY), Qt::black);
+
+    // Draw text
     for(const auto& child : segment.children) {
         if(child.type == TextSegmentType::MarkdownText) {
             QString text = child.content;
