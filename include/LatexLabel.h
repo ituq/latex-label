@@ -7,43 +7,72 @@
 #include "core/formula.h"
 #include "render.h"
 
-enum class LabelType {
-    Heading1,     // # Heading level 1
-    Heading2,     // ## Heading level 2
-    Heading3,     // ### Heading level 3
-    Heading4,     // #### Heading level 4
-    Heading5,     // ##### Heading level 5
-    Heading6,     // ###### Heading level 6
-    Paragraph,    // Plain text separated by blank lines
-    LineBreak,    // Two spaces at end-of-line for <br>
-    Bold,         // *bold* or _bold_
-    Italic,       // italic or italic
-    BoldItalic,   // **bold italic**
-    Blockquote,   // > blockquote
-    UnorderedListItem,   // - or * or + item
-    OrderedListItem,     // 1. item
-    InlineCode,          // ⁠ code ⁠
-    CodeBlock,           // ⁠  code  ⁠
-    HorizontalRule,      // ---
-    Link,                // [text](url)
-    Image,               // ![alt](src)
-    // Extended syntax
-    Table,               // | syntax | ...
-    Footnote,            // [^1]
-    Strikethrough,       // ~strikethrough~
-    TaskListItem,        // - [x] task
-    // Add more if you need: HeadingAlt1/2, etc.
-    Unknown
-};
-
 struct parsedString {
     QString text;
-    LabelType type;
+    int type; // Changed from LabelType to int for now
+};
+
+enum class MarkdownBlockType {
+    Document,
+    Quote,
+    UnorderedList,
+    OrderedList,
+    ListItem,
+    HorizontalRule,
+    Heading,
+    CodeBlock,
+    HtmlBlock,
+    Paragraph,
+    Table,
+    TableHead,
+    TableBody,
+    TableRow,
+    TableHeader,
+    TableData
+};
+
+enum class MarkdownSpanType {
+    Emphasis,
+    Strong,
+    Link,
+    Image,
+    Code,
+    Strikethrough,
+    LatexMath,
+    LatexMathDisplay,
+    WikiLink,
+    Underline
+};
+
+enum class MarkdownTextType {
+    Normal,
+    NullChar,
+    HardBreak,
+    SoftBreak,
+    Entity,
+    Code,
+    Html,
+    LatexMath
 };
 
 enum class TextSegmentType {
-    Regular,
-    InlineLatex
+    MarkdownBlock,
+    MarkdownSpan,
+    MarkdownText
+};
+
+
+struct MarkdownAttributes {
+    int headingLevel = 0;
+    QString url;
+    QString title;
+    QString alt;
+    int listStartNumber = 1;
+    bool isTight = false;
+    char listMarker = '*';
+    QString codeLanguage;
+
+    MarkdownAttributes() = default;
 };
 
 struct TextSegment {
@@ -51,28 +80,86 @@ struct TextSegment {
     TextSegmentType type;
     tex::TeXRender* render;
 
-    TextSegment() : render(nullptr) {}
+    // Markdown-specific fields
+    MarkdownBlockType blockType;
+    MarkdownSpanType spanType;
+    MarkdownTextType textType;
+    MarkdownAttributes attributes;
+
+    // For nested content and styling
+    QFont font;
+    QColor color;
+    Qt::Alignment alignment;
+    int indentLevel = 0;
+    bool isNested = false;
+    std::vector<TextSegment> children;
+
+    TextSegment() : render(nullptr), blockType(MarkdownBlockType::Document),
+                   spanType(MarkdownSpanType::Emphasis), textType(MarkdownTextType::Normal),
+                   color(Qt::black), alignment(Qt::AlignLeft) {}
+};
+
+// Parser state for md4c callbacks
+struct MarkdownParserState {
+    std::vector<TextSegment> segments;
+    std::vector<TextSegment*> blockStack;
+    std::vector<TextSegment*> spanStack;
+    QString currentText;
+    int textSize;
+
+    MarkdownParserState(int size) : textSize(size) {}
 };
 
 class LatexLabel : public QWidget{
 
 public:
-    void appendText(QString& text);
+    void appendText(MD_TEXTTYPE type, QString& text);
+    void appendText(QString& text); // Legacy overload for backward compatibility
+    void appendBlock(MD_BLOCKTYPE type, std::string data);
+    void appendSpan(MD_SPANTYPE type, std::string data);
     void setText(QString text);
     void setTextSize(int size);
     int getTextSize() const;
     LatexLabel(QWidget* parent=nullptr);
     ~LatexLabel();
+
 private:
     std::vector<parsedString> content;
     tex::TeXRender* _render;
     QString m_text;
     std::vector<TextSegment> m_segments;
     int m_textSize;
+    qreal m_leftMargin;
 
-    void parseText();
+    //void parseText();
+    void parseMarkdown(const QString& text);
     std::vector<TextSegment> parseInlineLatex(const QString& text);
     tex::TeXRender* parseInlineLatexExpression(const QString& latex);
+    tex::TeXRender* parseDisplayLatexExpression(const QString& latex);
+
+    // Markdown rendering helpers
+    void renderTextSegment(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal lineHeight);
+    void renderTextSegment(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal lineHeight, const QFont& parentFont);
+    void renderBlockElement(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight);
+    void renderSpanElement(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal lineHeight);
+    void renderSpanElement(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal lineHeight, const QFont& parentFont);
+    void renderListElement(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight);
+    void renderHeading(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight);
+    void renderCodeBlock(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight);
+    void renderBlockquote(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight);
+    void renderTable(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight);
+
+    // Font and styling helpers
+    QFont getFont(const TextSegment& segment) const;
+    QFont getFont(const TextSegment& segment, const QFont& parentFont) const;
+    qreal getLineHeight(const TextSegment& segment, const QFontMetricsF& metrics) const;
+
+    // md4c callback functions
+    static int enterBlockCallback(MD_BLOCKTYPE type, void* detail, void* userdata);
+    static int leaveBlockCallback(MD_BLOCKTYPE type, void* detail, void* userdata);
+    static int enterSpanCallback(MD_SPANTYPE type, void* detail, void* userdata);
+    static int leaveSpanCallback(MD_SPANTYPE type, void* detail, void* userdata);
+    static int textCallback(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata);
 
     // Simple incomplete LaTeX detection
     bool hasIncompleteLatexAtEnd(const QString& text);

@@ -3,6 +3,7 @@
 .cache/clangd/index
 build
 index
+.cursor
 api_key.txt
 # Prerequisites
 *.d
