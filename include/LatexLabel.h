@@ -71,6 +71,8 @@ struct MarkdownAttributes {
     bool isTight = false;
     char listMarker = '*';
     QString codeLanguage;
+    MarkdownBlockType parentListType = MarkdownBlockType::UnorderedList; //track parent list type for list items
+    int listItemNumber = 1; //track item number for ordered lists
 
     MarkdownAttributes() = default;
 };
@@ -106,8 +108,11 @@ struct MarkdownParserState {
     std::vector<TextSegment*> spanStack;
     QString currentText;
     int textSize;
+    int list_nesting_level;
+    std::vector<MarkdownBlockType> list_type_stack; //track nested list types
+    std::vector<int> list_item_counters; //track item numbers for each nesting level
 
-    MarkdownParserState(int size) : textSize(size) {}
+    MarkdownParserState(int size) : textSize(size), list_nesting_level(0) {}
 };
 
 class LatexLabel : public QWidget{
@@ -120,8 +125,13 @@ public:
     void setText(QString text);
     void setTextSize(int size);
     int getTextSize() const;
+    QSize sizeHint() const override;
     LatexLabel(QWidget* parent=nullptr);
     ~LatexLabel();
+    
+    //Debug method to print m_segments structure
+    void printSegmentsStructure() const;
+
 
 private:
     std::vector<parsedString> content;
@@ -130,6 +140,7 @@ private:
     std::vector<TextSegment> m_segments;
     int m_textSize;
     qreal m_leftMargin;
+    double m_leading=3.0;
 
     //void parseText();
     void parseMarkdown(const QString& text);
@@ -163,6 +174,9 @@ private:
 
     // Simple incomplete LaTeX detection
     bool hasIncompleteLatexAtEnd(const QString& text);
+    
+    // Debug helper method
+    void printSegmentRecursive(const TextSegment& segment, int depth) const;
 
 protected:
     void paintEvent(QPaintEvent* event) override;

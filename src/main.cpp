@@ -1,13 +1,22 @@
 #include <QApplication>
 #include <QMainWindow>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QDir>
 #include <QCoreApplication>
 #include <QTimer>
+#include <QComboBox>
+#include <QPushButton>
+#include <QLabel>
+#include <QFileDialog>
+#include <QTextStream>
+#include <QMessageBox>
+#include <QSettings>
 #include <iostream>
 #include "LatexLabel.h"
 #include <QScrollArea>
-#include <string>
+
+
 int main(int argc, char* argv[]){
     QApplication app(argc, argv);
     QMainWindow window;
@@ -23,117 +32,169 @@ int main(int argc, char* argv[]){
     // Initialize MicroTeX with the absolute path to resources
     tex::LaTeX::init(resPath.toStdString());
 
-    // Print the actual resource path being used
-    std::cout << "MicroTeX resource path: " << tex::LaTeX::getResRootPath() << std::endl;
+    window.setWindowTitle("LaTeX Label Test Suite");
 
-    window.setWindowTitle("Markdown Streaming Test");
+    // Initialize settings
+    QSettings settings("LatexLabel", "TestSuite");
+
+    // Create main widget and layout
+    QWidget* centralWidget = new QWidget(&window);
+    QVBoxLayout* mainLayout = new QVBoxLayout(centralWidget);
+
+    // Create test file selector
+    QHBoxLayout* controlLayout = new QHBoxLayout();
+    QLabel* selectorLabel = new QLabel("Test File:");
+    QComboBox* fileSelector = new QComboBox();
+    QPushButton* loadButton = new QPushButton("Load Test");
+    QPushButton* browseButton = new QPushButton("Browse...");
+
+    controlLayout->addWidget(selectorLabel);
+    controlLayout->addWidget(fileSelector);
+    controlLayout->addWidget(loadButton);
+    controlLayout->addWidget(browseButton);
+    controlLayout->addStretch();
+
+    mainLayout->addLayout(controlLayout);
 
 
-
-
-    // Streaming markdown test
-    LatexLabel* streamLabel = new LatexLabel(&window);
-    streamLabel->setTextSize(20);
-    streamLabel->setText(""); // Start empty
     QScrollArea* scroll = new QScrollArea;
-    scroll->setWidget(streamLabel);
-    streamLabel->setMinimumSize(300, 1200);
-    scroll->setWidgetResizable(true); // Make the scroll area resize its widget
-    scroll->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding); // Ensure the scroll area expands
 
+    scroll->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    scroll->setWidgetResizable(true);
+    LatexLabel* label = new LatexLabel(scroll);
+    label->setTextSize(20);
+    label->setText("Select a test file to load markdown content with LaTeX support.");
+    scroll->setWidget(label);
 
-    streamLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding); // Ensure the label expands
-    window.setCentralWidget(scroll);
+    mainLayout->addWidget(scroll);
+    window.setCentralWidget(centralWidget);
 
+    // Populate test files from tests directory
+    QString testsDir = QCoreApplication::applicationDirPath() + "/tests";
+    QDir testDirectory(testsDir);
 
-    // Enhanced markdown content with math expressions as a single string
-    QString* testContent = new QString(
-        "# h1 Heading 8-)\n"
-        "## h2 Heading\n"
-        "### h3 Heading\n"
-        "#### h4 Heading\n"
-        "##### h5 Heading\n"
-        "###### h6 Heading\n\n"
+    // If tests directory doesn't exist, try relative path
+    if (!testDirectory.exists()) {
+        testsDir = "../tests";
+        testDirectory.setPath(testsDir);
+    }
 
-        "# Sample Markdown\n\n"
+    if (testDirectory.exists()) {
+        QStringList filters;
+        filters << "*.md" << "*.markdown";
+        testDirectory.setNameFilters(filters);
+        QStringList testFiles = testDirectory.entryList(QDir::Files);
 
-        "This is some basic, sample markdown with math like $E = mc^2$.\n\n"
+        for (const QString& file : testFiles) {
+            fileSelector->addItem(file);
+        }
 
-        "## Second Heading\n\n"
+        if (testFiles.isEmpty()) {
+            fileSelector->addItem("No test files found");
+            loadButton->setEnabled(false);
+        }
+    } else {
+        fileSelector->addItem("Tests directory not found");
+        loadButton->setEnabled(false);
+        std::cout << "Tests directory not found at: " << testsDir.toStdString() << std::endl;
+    }
 
-        "1. One with $\\alpha + \\beta = \\gamma$\n"
-        "1. Two featuring $\\frac{1}{2} + \\frac{1}{3} = \\frac{5}{6}$\n"
-        "1. Three showing $\\int_{0}^{1} x^2 dx = \\frac{1}{3}$\n\n"
+        // Connect file selector to save selection when changed
+    QObject::connect(fileSelector, QOverload<const QString &>::of(&QComboBox::currentTextChanged),
+        [&](const QString &text) {
+            if (!text.isEmpty() && text != "No test files found" && text != "Tests directory not found") {
+                settings.setValue("lastSelectedFile", text);
+            }
+        });
 
-        "> This is a longer blockquote with multiple sentences and mathematical expressions to test the indentation behavior. "
-        "Here we have some mathematics: $\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1$ and also $\\int_{0}^{\\infty} e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}$. "
-        "The text should wrap properly while maintaining proper indentation throughout the entire blockquote section. "
-        "Even with **bold** and *italic* formatting, the indentation should be preserved.\n\n"
+    // Connect load button
+    QObject::connect(loadButton, &QPushButton::clicked, [&]() {
+        printf("============================================\n===========================NEW TEST===============================\n============================================");
+        QString selectedFile = fileSelector->currentText();
+        if (selectedFile.isEmpty() || selectedFile == "No test files found" || selectedFile == "Tests directory not found") {
+            return;
+        }
 
-        "And **bold**, *italics*, and even *italics and later **bold***. Even ~~strikethrough~~. "
-        "[A link](https://markdowntohtml.com) to somewhere.\n\n"
+        QString filePath = testsDir + "/" + selectedFile;
+        QFile file(filePath);
 
-        "Mathematical expressions like $\\sqrt{2} \\approx 1.414$ and $e^{i\\pi} + 1 = 0$ are beautiful.\n\n"
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream in(&file);
+            QString content = in.readAll();
+            file.close();
 
-        "And code highlighting:\n\n"
-        "```js\n"
-        "var foo = 'bar';\n\n"
-        "function baz(s) {\n"
-        "  return foo + ':' + s;\n"
-        "}\n"
-        "```\n\n"
+            label->setText(content);
 
-        "Or inline code like `var foo = 'bar';` with math $f(x) = x^2$.\n\n"
+            // Save the selected file to settings
+            settings.setValue("lastSelectedFile", selectedFile);
 
-        "Some advanced math: $\\nabla \\cdot \\vec{E} = \\frac{\\rho}{\\epsilon_0}$ and $\\vec{F} = m\\vec{a}$.\n\n"
-
-        "The end ... featuring $\\zeta(2) = \\frac{\\pi^2}{6}$"
-    );
-    QString* testContents = new QString(
-
-        "> This is a longer blockquote with multiple sentences and mathematical expressions to test the indentation behavior. "
-        "Here we have some mathematics: $\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1$ and also $\\int_{0}^{\\infty} e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}$. "
-        "The text should wrap properly while maintaining proper indentation throughout the entire blockquote section. "
-        "Even with **bold** and *italic* formatting, the indentation should be preserved.\n\n"
-
-    );
-
-    QString test2 = R"CONTINUITY(Okay, let's break down continuity in functions. It's a fundamental concept in calculus, and while the definition can seem a bit technical, the idea is surprisingly intuitive.
-
-    **1. The Intuitive Idea: No Jumps, Breaks, or Holes**
-
-    Imagine a graph of a function.  A continuous function's graph looks like one you can draw
-*without lifting your pen*.  There are no sudden jumps, breaks, or holes in the line.
-
-    )CONTINUITY";
-    //QString* testContent = &test2;
-    // Split the content into words for streaming
-
-    QStringList words = testContent->split(' ', Qt::SkipEmptyParts);
-    int* wordIndex = new int(0);
-
-    // Create timer for streaming words
-    QTimer* streamTimer = new QTimer(&window);
-    QObject::connect(streamTimer, &QTimer::timeout, [streamLabel, words, wordIndex, streamTimer]() {
-        if (*wordIndex < words.length()) {
-            QString nextWord = words.at(*wordIndex) + " ";
-            streamLabel->appendText(nextWord);
-            (*wordIndex)++;
+            std::cout << "Loaded test file: " << selectedFile.toStdString() << std::endl;
         } else {
-            streamTimer->stop();
+            QMessageBox::warning(&window, "Error", "Could not open file: " + filePath);
         }
     });
 
-    // Start streaming after a 1 second delay
-    QTimer::singleShot(1000, [streamTimer]() {
-        streamTimer->start(16);
+    // Connect browse button
+    QObject::connect(browseButton, &QPushButton::clicked, [&]() {
+        QString fileName = QFileDialog::getOpenFileName(&window,
+            "Open Markdown Test File",
+            testsDir,
+            "Markdown Files (*.md *.markdown);;All Files (*)");
+
+        if (!fileName.isEmpty()) {
+            QFile file(fileName);
+            if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                QTextStream in(&file);
+                QString content = in.readAll();
+                file.close();
+
+                                label->setText(content);
+
+                // Add to selector if it's a new file
+                QFileInfo fileInfo(fileName);
+                QString baseName = fileInfo.fileName();
+                if (fileSelector->findText(baseName) == -1) {
+                    fileSelector->addItem(baseName);
+                    fileSelector->setCurrentText(baseName);
+                }
+
+                // Save the selected file to settings
+                settings.setValue("lastSelectedFile", baseName);
+
+                std::cout << "Loaded file: " << fileName.toStdString() << std::endl;
+            } else {
+                QMessageBox::warning(&window, "Error", "Could not open file: " + fileName);
+            }
+        }
     });
+
+    // Auto-load last selected test file or first available test file
+    QString lastSelectedFile = settings.value("lastSelectedFile", "").toString();
+    bool loadedLastSelected = false;
+
+    // Try to load the last selected file first
+    if (!lastSelectedFile.isEmpty()) {
+        int index = fileSelector->findText(lastSelectedFile);
+        if (index != -1) {
+            fileSelector->setCurrentIndex(index);
+            loadButton->click();
+            loadedLastSelected = true;
+            std::cout << "Auto-loaded last selected file: " << lastSelectedFile.toStdString() << std::endl;
+        } else {
+            std::cout << "Last selected file not found: " << lastSelectedFile.toStdString() << std::endl;
+        }
+    }
+
+    // If we couldn't load the last selected file, load the first available one
+    if (!loadedLastSelected && fileSelector->count() > 0 &&
+        fileSelector->itemText(0) != "No test files found" &&
+        fileSelector->itemText(0) != "Tests directory not found") {
+        loadButton->click();
+        std::cout << "Auto-loaded first available file: " << fileSelector->itemText(0).toStdString() << std::endl;
+    }
 
     window.resize(800, 600);
     window.show();
-
-
-
 
     int retn = app.exec();
 
