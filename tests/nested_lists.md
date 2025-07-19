@@ -48,11 +48,11 @@ This file tests complex nested list structures.
 ## Lists with Display Math
 
 1. First theorem:
-   
+
    $$\sum_{n=1}^{\infty} \frac{1}{n^2} = \frac{\pi^2}{6}$$
-   
+
 2. Second theorem:
-   
+
    $$\int_0^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$$
 
 ## Complex Mixed Example
@@ -68,7 +68,7 @@ This file tests complex nested list structures.
   - Complex Analysis
     1. Complex numbers: $z = a + bi$
     2. Cauchy-Riemann equations:
-       
+
        $$\frac{\partial u}{\partial x} = \frac{\partial v}{\partial y}$$
-       
-       $$\frac{\partial u}{\partial y} = -\frac{\partial v}{\partial x}$$ 
+
+       $$\frac{\partial u}{\partial y} = -\frac{\partial v}{\partial x}$$

@@ -1113,11 +1113,11 @@ void LatexLabel::renderBlockquote(QPainter& painter, const TextSegment& segment,
 
 void LatexLabel::renderTable(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight) {
     //Convert markdown table to LaTeX table syntax
-    y+=lineHeight+10;
+    y+=lineHeight;
     QString latexTable;
     int columnCount = 0;
     bool hasHeader = false;
-    
+
     //First pass: determine column count and structure
     for(const auto& child : segment.children) {
         if(child.type == TextSegmentType::MarkdownBlock) {
@@ -1125,10 +1125,10 @@ void LatexLabel::renderTable(QPainter& painter, const TextSegment& segment, qrea
                 hasHeader = true;
                 //Find first row to determine column count
                 for(const auto& headChild : child.children) {
-                    if(headChild.type == TextSegmentType::MarkdownBlock && 
+                    if(headChild.type == TextSegmentType::MarkdownBlock &&
                        headChild.blockType == MarkdownBlockType::TableRow) {
                         for(const auto& rowChild : headChild.children) {
-                            if(rowChild.type == TextSegmentType::MarkdownBlock && 
+                            if(rowChild.type == TextSegmentType::MarkdownBlock &&
                                rowChild.blockType == MarkdownBlockType::TableHeader) {
                                 columnCount++;
                             }
@@ -1139,10 +1139,10 @@ void LatexLabel::renderTable(QPainter& painter, const TextSegment& segment, qrea
             } else if(child.blockType == MarkdownBlockType::TableBody && columnCount == 0) {
                 //fallback: count columns from first data row if no header
                 for(const auto& bodyChild : child.children) {
-                    if(bodyChild.type == TextSegmentType::MarkdownBlock && 
+                    if(bodyChild.type == TextSegmentType::MarkdownBlock &&
                        bodyChild.blockType == MarkdownBlockType::TableRow) {
                         for(const auto& rowChild : bodyChild.children) {
-                            if(rowChild.type == TextSegmentType::MarkdownBlock && 
+                            if(rowChild.type == TextSegmentType::MarkdownBlock &&
                                rowChild.blockType == MarkdownBlockType::TableData) {
                                 columnCount++;
                             }
@@ -1153,7 +1153,7 @@ void LatexLabel::renderTable(QPainter& painter, const TextSegment& segment, qrea
             }
         }
     }
-    
+
     if(columnCount == 0) {
         //fallback to simple rendering if table structure can't be determined
         for(const auto& child : segment.children) {
@@ -1163,14 +1163,14 @@ void LatexLabel::renderTable(QPainter& painter, const TextSegment& segment, qrea
         }
         return;
     }
-    
+
     //Build LaTeX table
     latexTable = "\\begin{array}{|";
     for(int i = 0; i < columnCount; i++) {
         latexTable += "c|";
     }
     latexTable += "}\n\\hline\n";
-    
+
     //extract table content
     std::function<QString(const TextSegment&)> extractTextContent = [&](const TextSegment& seg) -> QString {
         QString content;
@@ -1182,18 +1182,18 @@ void LatexLabel::renderTable(QPainter& painter, const TextSegment& segment, qrea
         }
         return content.trimmed();
     };
-    
+
     //process table rows
     for(const auto& child : segment.children) {
         if(child.type == TextSegmentType::MarkdownBlock) {
             if(child.blockType == MarkdownBlockType::TableHead) {
                 //process header rows
                 for(const auto& headChild : child.children) {
-                    if(headChild.type == TextSegmentType::MarkdownBlock && 
+                    if(headChild.type == TextSegmentType::MarkdownBlock &&
                        headChild.blockType == MarkdownBlockType::TableRow) {
                         QStringList cellContents;
                         for(const auto& rowChild : headChild.children) {
-                            if(rowChild.type == TextSegmentType::MarkdownBlock && 
+                            if(rowChild.type == TextSegmentType::MarkdownBlock &&
                                rowChild.blockType == MarkdownBlockType::TableHeader) {
                                 QString cellText = extractTextContent(rowChild);
                                 if(!cellText.isEmpty()) {
@@ -1211,11 +1211,11 @@ void LatexLabel::renderTable(QPainter& painter, const TextSegment& segment, qrea
             } else if(child.blockType == MarkdownBlockType::TableBody) {
                 //process data rows
                 for(const auto& bodyChild : child.children) {
-                    if(bodyChild.type == TextSegmentType::MarkdownBlock && 
+                    if(bodyChild.type == TextSegmentType::MarkdownBlock &&
                        bodyChild.blockType == MarkdownBlockType::TableRow) {
                         QStringList cellContents;
                         for(const auto& rowChild : bodyChild.children) {
-                            if(rowChild.type == TextSegmentType::MarkdownBlock && 
+                            if(rowChild.type == TextSegmentType::MarkdownBlock &&
                                rowChild.blockType == MarkdownBlockType::TableData) {
                                 QString cellText = extractTextContent(rowChild);
                                 if(!cellText.isEmpty()) {
@@ -1233,31 +1233,31 @@ void LatexLabel::renderTable(QPainter& painter, const TextSegment& segment, qrea
             }
         }
     }
-    
+
     latexTable += "\\hline\n\\end{array}";
-    
+
     //render the LaTeX table as a display block
     tex::TeXRender* tableRender = parseDisplayLatexExpression(latexTable);
     if(tableRender != nullptr) {
         qreal renderWidth = tableRender->getWidth();
         qreal renderHeight = tableRender->getHeight();
-        
+
         //center the table horizontally
         qreal tableX = maxWidth / 2 - renderWidth / 2;
         if(tableX < 5.0) tableX = 5.0; //minimum left margin
-        
+
         //add some vertical spacing before the table
         y += lineHeight;
-        
+
         //draw the LaTeX table
         qreal tableY = y - (renderHeight - tableRender->getDepth());
         tex::Graphics2D_qt g2(&painter);
         tableRender->draw(g2, static_cast<int>(tableX), static_cast<int>(tableY));
-        
+
         //update position after table
         x = 5.0; //reset to left margin
         y += renderHeight + lineHeight; //add spacing after table
-        
+
         delete tableRender;
     } else {
         //fallback to simple rendering if LaTeX parsing fails
