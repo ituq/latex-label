@@ -16,6 +16,38 @@
 #include "LatexLabel.h"
 #include <QScrollArea>
 
+//Simple text streaming
+QTimer* stream_timer = nullptr;
+QStringList words;
+int word_index = 0;
+LatexLabel* label_ref = nullptr;
+
+void add_next_word() {
+    if (!label_ref || word_index >= words.size()) {
+        stream_timer->stop();
+        return;
+    }
+
+    QString word = words[word_index] + " ";
+    label_ref->appendText(word);
+    word_index++;
+}
+
+void start_text_streaming(const QString& content, LatexLabel* label) {
+    label_ref = label;
+    word_index = 0;
+
+    label->setText("");
+    words = content.split(' ', Qt::SkipEmptyParts);
+
+    if (!stream_timer) {
+        stream_timer = new QTimer();
+        QObject::connect(stream_timer, &QTimer::timeout, add_next_word);
+    }
+
+    stream_timer->start(50); //Much faster - 20ms between words
+}
+
 
 int main(int argc, char* argv[]){
     QApplication app(argc, argv);
@@ -123,7 +155,9 @@ int main(int argc, char* argv[]){
             QString content = in.readAll();
             file.close();
 
+            //start_text_streaming(content, label);
             label->setText(content);
+            label->printSegmentsStructure();
 
             // Save the selected file to settings
             settings.setValue("lastSelectedFile", selectedFile);
@@ -148,7 +182,7 @@ int main(int argc, char* argv[]){
                 QString content = in.readAll();
                 file.close();
 
-                                label->setText(content);
+                start_text_streaming(content, label);
 
                 // Add to selector if it's a new file
                 QFileInfo fileInfo(fileName);

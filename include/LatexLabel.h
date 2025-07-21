@@ -2,64 +2,24 @@
 #include <QString>
 #include <QPainter>
 #include <QRect>
+
 #include <md4c.h>
+#include <vector>
 #include "latex.h"
 #include "core/formula.h"
 #include "render.h"
+#include "element.h"
+
 
 struct parsedString {
     QString text;
     int type; // Changed from LabelType to int for now
 };
+/*
 
-enum class MarkdownBlockType {
-    Document,
-    Quote,
-    UnorderedList,
-    OrderedList,
-    ListItem,
-    HorizontalRule,
-    Heading,
-    CodeBlock,
-    HtmlBlock,
-    Paragraph,
-    Table,
-    TableHead,
-    TableBody,
-    TableRow,
-    TableHeader,
-    TableData
-};
 
-enum class MarkdownSpanType {
-    Emphasis,
-    Strong,
-    Link,
-    Image,
-    Code,
-    Strikethrough,
-    LatexMath,
-    LatexMathDisplay,
-    WikiLink,
-    Underline
-};
 
-enum class MarkdownTextType {
-    Normal,
-    NullChar,
-    HardBreak,
-    SoftBreak,
-    Entity,
-    Code,
-    Html,
-    LatexMath
-};
 
-enum class TextSegmentType {
-    MarkdownBlock,
-    MarkdownSpan,
-    MarkdownText
-};
 
 
 struct MarkdownAttributes {
@@ -76,7 +36,16 @@ struct MarkdownAttributes {
 
     MarkdownAttributes() = default;
 };
+*/
 
+
+
+//
+// SUPPORTED SPAN TYPES
+//
+
+
+/*
 struct TextSegment {
     QString content;
     TextSegmentType type;
@@ -101,19 +70,22 @@ struct TextSegment {
                    color(Qt::black), alignment(Qt::AlignLeft) {}
 };
 
+*/
 // Parser state for md4c callbacks
 struct MarkdownParserState {
-    std::vector<TextSegment> segments;
-    std::vector<TextSegment*> blockStack;
-    std::vector<TextSegment*> spanStack;
+    std::vector<Element*> segments;
+    std::vector<Element*> blockStack;
+    std::vector<Element*> spanStack;
     QString currentText;
     int textSize;
     int list_nesting_level;
-    std::vector<MarkdownBlockType> list_type_stack; //track nested list types
-    std::vector<int> list_item_counters; //track item numbers for each nesting level
+    std::vector<Element> list_type_stack; //track nested list types
+
 
     MarkdownParserState(int size) : textSize(size), list_nesting_level(0) {}
 };
+tex::TeXRender* getLatexRenderer(const QString& latex, bool isInline);
+
 
 class LatexLabel : public QWidget{
 
@@ -128,7 +100,7 @@ public:
     QSize sizeHint() const override;
     LatexLabel(QWidget* parent=nullptr);
     ~LatexLabel();
-    
+
     //Debug method to print m_segments structure
     void printSegmentsStructure() const;
 
@@ -137,33 +109,27 @@ private:
     std::vector<parsedString> content;
     tex::TeXRender* _render;
     QString m_text;
-    std::vector<TextSegment> m_segments;
+    std::vector<Element*> m_segments;
     int m_textSize;
     qreal m_leftMargin;
     double m_leading=3.0;
 
     //void parseText();
     void parseMarkdown(const QString& text);
-    std::vector<TextSegment> parseInlineLatex(const QString& text);
-    tex::TeXRender* parseInlineLatexExpression(const QString& latex);
-    tex::TeXRender* parseDisplayLatexExpression(const QString& latex);
 
     // Markdown rendering helpers
-    void renderTextSegment(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal lineHeight);
-    void renderTextSegment(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal lineHeight, const QFont& parentFont);
-    void renderBlockElement(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight);
-    void renderSpanElement(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal lineHeight);
-    void renderSpanElement(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal lineHeight, const QFont& parentFont);
-    void renderListElement(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight);
-    void renderHeading(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight);
-    void renderCodeBlock(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight);
-    void renderBlockquote(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight);
-    void renderTable(QPainter& painter, const TextSegment& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight);
+    void renderBlock(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
+    void renderSpan(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal lineHeight, QFont* font_passed=nullptr);
+    void renderListElement(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
+    void renderHeading(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
+    void renderCodeBlock(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
+    void renderBlockquote(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
+    void renderTextSegment(QPainter& painter, const Element* segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal lineHeight);
+    void renderTable(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight);
 
     // Font and styling helpers
-    QFont getFont(const TextSegment& segment) const;
-    QFont getFont(const TextSegment& segment, const QFont& parentFont) const;
-    qreal getLineHeight(const TextSegment& segment, const QFontMetricsF& metrics) const;
+    QFont getFont(const Element* segment) const;
+    qreal getLineHeight(const Element& segment, const QFontMetricsF& metrics) const;
 
     // md4c callback functions
     static int enterBlockCallback(MD_BLOCKTYPE type, void* detail, void* userdata);
@@ -174,9 +140,12 @@ private:
 
     // Simple incomplete LaTeX detection
     bool hasIncompleteLatexAtEnd(const QString& text);
-    
+
     // Debug helper method
-    void printSegmentRecursive(const TextSegment& segment, int depth) const;
+    void printSegmentRecursive(const Element* element, int depth) const;
+
+    // Cleanup methods for AST elements
+    void cleanup_segments(std::vector<Element*>& elements);  // free all pointers in AST
 
 protected:
     void paintEvent(QPaintEvent* event) override;
