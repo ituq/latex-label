@@ -619,7 +619,7 @@ void LatexLabel::renderSpan(QPainter& painter, const Element& segment, qreal& x,
         painter.restore();
 
         if(data->isInline){
-            x += renderWidth + 3.0;
+            x += renderWidth + metrics.horizontalAdvance(" ");
         }
         else{
             x = m_leftMargin;
@@ -695,7 +695,7 @@ void LatexLabel::renderBlock(QPainter& painter, const Element& segment, qreal& x
             y += 2*lineHeight;
             painter.save();
             painter.setPen(QPen(Qt::gray, 2));
-            painter.drawLine(min_x+5, y, max_x, y);
+            painter.drawLine(5, y, width()-5, y);
             painter.restore();
             y += 2*lineHeight;
             break;
@@ -763,8 +763,10 @@ void LatexLabel::renderListElement(QPainter& painter, const Element& segment, qr
                 renderSpan(painter, *child, x, y, left_border,max_x, lineHeight);
             }
             else{
-                x=left_border;
-                y+=lineHeight*1.3;
+                if(x>left_border){
+                    x=left_border;
+                    y+=lineHeight*1.3;
+                }
                 renderBlock(painter, *child, x, y, left_border,max_x, lineHeight);
             }
         }
@@ -1089,11 +1091,13 @@ void LatexLabel::paintEvent(QPaintEvent* event){
     setMinimumHeight(widget_height);
     updateGeometry();
     /*
+
     clock_t end = clock();
     double elapsed = (double)(end - start) / CLOCKS_PER_SEC;
 
     qDebug() << "Rendering took: " << elapsed*1000 << "ms";
     */
+
 }
 
 
