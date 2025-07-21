@@ -92,6 +92,7 @@ int LatexLabel::enterBlockCallback(MD_BLOCKTYPE type, void* detail, void* userda
             break;
         }
         case MD_BLOCK_UL:{
+            qDebug()<<"enter UL";
             list_data* data = (list_data*) malloc(sizeof(list_data));
             data->is_ordered = false;
             if(detail){
@@ -105,6 +106,7 @@ int LatexLabel::enterBlockCallback(MD_BLOCKTYPE type, void* detail, void* userda
             break;
         }
         case MD_BLOCK_OL:{
+            qDebug()<<"enter OL";
             list_data* data = (list_data*) malloc(sizeof(list_data));
             data->is_ordered = true;
             if(detail) {
@@ -118,6 +120,7 @@ int LatexLabel::enterBlockCallback(MD_BLOCKTYPE type, void* detail, void* userda
             break;
         }
         case MD_BLOCK_LI:{
+            qDebug()<<"enter LI";
             list_item_data* data = (list_item_data*) malloc(sizeof(list_item_data));
             Element* parent = state->blockStack.back();
             data->is_ordered = ((list_data*)parent->data)->is_ordered;
@@ -214,6 +217,15 @@ int LatexLabel::leaveBlockCallback(MD_BLOCKTYPE type, void* detail, void* userda
     };
     ExtendedParserState* extState = static_cast<ExtendedParserState*>(userdata);
     MarkdownParserState* state = extState->state;
+    if(type== MD_BLOCK_OL){
+        qDebug()<<"leave OL";
+    }
+    else if(type== MD_BLOCK_UL){
+        qDebug()<<"leave UL";
+    }
+    else if(type== MD_BLOCK_LI){
+        qDebug()<<"leave LI";
+    }
 
     if( type==MD_BLOCK_DOC){
         state->segments=state->blockStack.back()->children;
@@ -673,7 +685,7 @@ void LatexLabel::renderBlock(QPainter& painter, const Element& segment, qreal& x
         case MD_BLOCK_UL:
         case MD_BLOCK_OL:
         case MD_BLOCK_LI:
-            //renderListElement(painter, segment, x, y, min_x,max_x, maxWidth, lineHeight);
+            renderListElement(painter, segment, x, y, min_x,max_x, lineHeight);
             break;
         case MD_BLOCK_TABLE:
             //renderTable(painter, segment, x, y, min_x,max_x, maxWidth, lineHeight);
@@ -751,6 +763,8 @@ void LatexLabel::renderListElement(QPainter& painter, const Element& segment, qr
                 renderSpan(painter, *child, x, y, left_border,max_x, lineHeight);
             }
             else{
+                x=left_border;
+                y+=lineHeight*1.3;
                 renderBlock(painter, *child, x, y, left_border,max_x, lineHeight);
             }
         }

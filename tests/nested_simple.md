@@ -1,1 +1,2 @@
-Here's some inline math: $E = mc^2$ within a sentence.
+- Parent item 1
+  - Child item 1
