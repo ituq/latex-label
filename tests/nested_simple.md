@@ -1,1 +1,1 @@
-Formally, a function $f(x)$ is continuous at a point $x=a$ if:
+Here's some inline math: $E = mc^2$ within a sentence.

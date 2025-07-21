@@ -588,13 +588,13 @@ void LatexLabel::renderSpan(QPainter& painter, const Element& segment, qreal& x,
         qreal renderWidth = data->render->getWidth();
         qreal renderHeight = data->render->getHeight();
 
-        if(data->isInline){
+        if(data->isInline&& x+renderWidth>max_x){
             //inline latex, check if it fits on line
-            x = m_leftMargin;
+            x = min_x;
             y += lineHeight+m_leading;
 
         }
-        else{
+        else if(!data->isInline){
             y += renderHeight;
             x=min_x+(max_x-min_x)/2-renderWidth/2;
         }
@@ -634,7 +634,7 @@ void LatexLabel::renderSpan(QPainter& painter, const Element& segment, qreal& x,
         qreal wordWidth = metrics.horizontalAdvance(wordWithSpace);
 
         //Check if word fits on current line
-        if(x + wordWidth > max_x && x > m_leftMargin) {
+        if(x + wordWidth > max_x) {
             x = m_leftMargin;
             y += lineHeight+m_leading;
         }
