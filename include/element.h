@@ -14,6 +14,7 @@ typedef enum spantype{
     normal,
     italic,
     bold,
+    italic_bold,
     image,
     code,
     link,

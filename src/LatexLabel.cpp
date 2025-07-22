@@ -12,7 +12,7 @@
 
 static double widget_height=200;
 
-LatexLabel::LatexLabel(QWidget* parent) : QWidget(parent), _render(nullptr), m_textSize(12), m_leftMargin(5.0) {
+LatexLabel::LatexLabel(QWidget* parent) : QWidget(parent), _render(nullptr), m_textSize(12) {
 
     setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     QFontMetricsF base_metric(QFont("Arial",m_textSize));
@@ -92,7 +92,6 @@ int LatexLabel::enterBlockCallback(MD_BLOCKTYPE type, void* detail, void* userda
             break;
         }
         case MD_BLOCK_UL:{
-            qDebug()<<"enter UL";
             list_data* data = (list_data*) malloc(sizeof(list_data));
             data->is_ordered = false;
             if(detail){
@@ -106,7 +105,6 @@ int LatexLabel::enterBlockCallback(MD_BLOCKTYPE type, void* detail, void* userda
             break;
         }
         case MD_BLOCK_OL:{
-            qDebug()<<"enter OL";
             list_data* data = (list_data*) malloc(sizeof(list_data));
             data->is_ordered = true;
             if(detail) {
@@ -120,7 +118,6 @@ int LatexLabel::enterBlockCallback(MD_BLOCKTYPE type, void* detail, void* userda
             break;
         }
         case MD_BLOCK_LI:{
-            qDebug()<<"enter LI";
             list_item_data* data = (list_item_data*) malloc(sizeof(list_item_data));
             Element* parent = state->blockStack.back();
             data->is_ordered = ((list_data*)parent->data)->is_ordered;
@@ -217,15 +214,6 @@ int LatexLabel::leaveBlockCallback(MD_BLOCKTYPE type, void* detail, void* userda
     };
     ExtendedParserState* extState = static_cast<ExtendedParserState*>(userdata);
     MarkdownParserState* state = extState->state;
-    if(type== MD_BLOCK_OL){
-        qDebug()<<"leave OL";
-    }
-    else if(type== MD_BLOCK_UL){
-        qDebug()<<"leave UL";
-    }
-    else if(type== MD_BLOCK_LI){
-        qDebug()<<"leave LI";
-    }
 
     if( type==MD_BLOCK_DOC){
         state->segments=state->blockStack.back()->children;
@@ -250,14 +238,28 @@ int LatexLabel::enterSpanCallback(MD_SPANTYPE type, void* detail, void* userdata
 
     switch(type) {
         case MD_SPAN_EM:
+            qDebug()<<"enter italic";
             *subtype=spantype::italic;
             span->data= malloc(sizeof(span_data));
             break;
         case MD_SPAN_STRONG:
+            if(!state->spanStack.empty()&&SPANTYPE(state->spanStack.back())==spantype::italic){
+                //replace both with italic_bold span
+                state->blockStack.back()->children.pop_back();
+                Element* ital = state->spanStack.back();
+                state->spanStack.pop_back();
+                free(ital->data);
+                free(ital->subtype);
+                delete ital;
+                *subtype=spantype::italic_bold;
+                span->data= malloc(sizeof(span_data));
+                break;
+            }
             *subtype=spantype::bold;
             span->data= malloc(sizeof(span_data));
             break;
         case MD_SPAN_A:{
+            printf("enter link");
 
             *subtype=spantype::link;
             link_data* data = (link_data*)malloc(sizeof(link_data));
@@ -276,8 +278,6 @@ int LatexLabel::enterSpanCallback(MD_SPANTYPE type, void* detail, void* userdata
                 data->title = "Error parsing link";
             }
             span->data = data;
-            state->blockStack.back()->children.push_back(span);
-            return 0;
         }
 
             break;
@@ -334,12 +334,14 @@ int LatexLabel::leaveSpanCallback(MD_SPANTYPE type, void* detail, void* userdata
     ExtendedParserState* extState = static_cast<ExtendedParserState*>(userdata);
     MarkdownParserState* state = extState->state;
     switch(type) { //some spans don't add to span stack
-        case MD_SPAN_A:
-            return 0;
         case MD_SPAN_IMG:
             return 0;
         case MD_SPAN_WIKILINK:
             return 0;
+        case MD_SPAN_STRONG:
+            if(SPANTYPE(state->spanStack.back())==spantype::italic_bold){
+                return 0;
+            }
         default:
             state->spanStack.pop_back();
     }
@@ -419,6 +421,10 @@ int LatexLabel::textCallback(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size
 
     switch(type) {
         case MD_TEXT_NORMAL:
+            if(SPANTYPE(parent_span)==spantype::link){
+                ((link_data*)data)->title=textStr;
+                break;
+            }
             data->text=textStr;
             break;
         case MD_TEXT_NULLCHAR:
@@ -495,7 +501,7 @@ void LatexLabel::parseMarkdown(const QString& text) {
     // Set up md4c parser
     MD_PARSER parser = {0};
     parser.abi_version = 0;
-    parser.flags = MD_FLAG_LATEXMATHSPANS | MD_FLAG_STRIKETHROUGH | MD_FLAG_UNDERLINE | MD_FLAG_TABLES;
+    parser.flags = MD_FLAG_LATEXMATHSPANS | MD_FLAG_STRIKETHROUGH | MD_FLAG_TABLES;
     parser.enter_block = enterBlockCallback;
     parser.leave_block = leaveBlockCallback;
     parser.enter_span = enterSpanCallback;
@@ -541,11 +547,18 @@ QFont LatexLabel::getFont(const Element* segment) const {
             case spantype::underline:
                 font.setUnderline(true);
                 break;
+            case spantype::link:
+                font.setUnderline(true);
+                break;
             case spantype::strikethrough:
                 font.setStrikeOut(true);
                 break;
             case spantype::code:
                 font.setFamily("Monaco");
+                break;
+            case spantype::italic_bold:
+                font.setBold(true);
+                font.setItalic(true);
                 break;
             default:
                 break;
@@ -568,6 +581,7 @@ qreal LatexLabel::getLineHeight(const Element& segment, const QFontMetricsF& met
 }
 
 void LatexLabel::renderSpan(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal lineHeight,QFont* font_passed) {
+    assert(min_x<=x && x<=max_x);
     QFont font;
     if(font_passed){
         font=*font_passed;
@@ -608,7 +622,7 @@ void LatexLabel::renderSpan(QPainter& painter, const Element& segment, qreal& x,
         }
         else if(!data->isInline){
             y += renderHeight;
-            x=min_x+(max_x-min_x)/2-renderWidth/2;
+            x=(max_x-min_x)/2-renderWidth/2;
         }
 
         // Draw LaTeX expression
@@ -622,7 +636,7 @@ void LatexLabel::renderSpan(QPainter& painter, const Element& segment, qreal& x,
             x += renderWidth + metrics.horizontalAdvance(" ");
         }
         else{
-            x = m_leftMargin;
+            x = min_x;
             y += renderHeight;
         }
 
@@ -638,7 +652,7 @@ void LatexLabel::renderSpan(QPainter& painter, const Element& segment, qreal& x,
     QStringList words = text.split(' ', Qt::SkipEmptyParts);
     for(const QString& word : words) {
         if(word=="\n"){
-            x = m_leftMargin;
+            x = min_x;
             y += lineHeight +m_leading;
             continue;
         }
@@ -647,7 +661,7 @@ void LatexLabel::renderSpan(QPainter& painter, const Element& segment, qreal& x,
 
         //Check if word fits on current line
         if(x + wordWidth > max_x) {
-            x = m_leftMargin;
+            x = min_x;
             y += lineHeight+m_leading;
         }
 
@@ -658,6 +672,7 @@ void LatexLabel::renderSpan(QPainter& painter, const Element& segment, qreal& x,
 
 
 void LatexLabel::renderBlock(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight) {
+    assert(min_x<=x && x<=max_x);
     QFont font = getFont(&segment);
     QFontMetricsF metrics(font);
     qreal currentLineHeight = getLineHeight(segment, metrics);
@@ -1139,9 +1154,10 @@ void LatexLabel::setText(QString text){
     clock_t end = clock();
     double elapsed = (double)(end - start) / CLOCKS_PER_SEC;
 
-    qDebug() << "Parsing took: " << elapsed << " s";
-    //qDebug() << "=== LIST NESTING DEBUG: After parsing ===";
-    //printSegmentsStructure();
+    qDebug() << "Parsing took: " << elapsed*1000 << "ms";
+
+
+
     update();
     adjustSize();
 }
@@ -1247,6 +1263,7 @@ void LatexLabel::printSegmentRecursive(const Element* element, int depth) const 
             case spantype::underline: spanTypeStr = "Underline"; break;
             case spantype::normal: spanTypeStr = "Normal"; break;
             case spantype::linebreak: spanTypeStr = "LineBreak"; break;
+            case spantype::italic_bold: spanTypeStr = "Italic & Bold"; break;
         }
         qDebug().noquote() << QString("%1  spanType: %2").arg(indent, spanTypeStr);
 

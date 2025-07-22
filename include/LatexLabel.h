@@ -111,7 +111,6 @@ private:
     QString m_text;
     std::vector<Element*> m_segments;
     int m_textSize;
-    qreal m_leftMargin;
     double m_leading=3.0;
 
     //void parseText();
