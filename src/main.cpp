@@ -18,27 +18,79 @@
 
 //Simple text streaming
 QTimer* stream_timer = nullptr;
-QStringList words;
+QStringList lines;
+QStringList current_line_words;
+int line_index = 0;
 int word_index = 0;
 LatexLabel* label_ref = nullptr;
+QString accumulated_text = "";
 
 void add_next_word() {
-    if (!label_ref || word_index >= words.size()) {
+    if (!label_ref || line_index >= lines.size()) {
         stream_timer->stop();
         return;
     }
 
-    QString word = words[word_index] + " ";
-    label_ref->appendText(word);
-    word_index++;
+    //If we're starting a new line, split it into words
+    if (current_line_words.isEmpty() && line_index < lines.size()) {
+        QString line = lines[line_index];
+        current_line_words = line.split(' ', Qt::SkipEmptyParts);
+        word_index = 0;
+
+        //If the line is empty (just whitespace), add it as-is and move to next line
+        if (current_line_words.isEmpty()) {
+            accumulated_text += line + "\n";
+            label_ref->appendText(accumulated_text);
+            accumulated_text = "";
+            line_index++;
+            return;
+        }
+    }
+
+    //Add the next word from current line
+    if (word_index < current_line_words.size()) {
+        QString word = current_line_words[word_index];
+
+        //Preserve leading spaces for the first word of each line
+        if (word_index == 0) {
+            QString original_line = lines[line_index];
+            int leading_spaces = 0;
+            for (int i = 0; i < original_line.length(); i++) {
+                if (original_line[i] == ' ') {
+                    leading_spaces++;
+                } else {
+                    break;
+                }
+            }
+            accumulated_text += QString(" ").repeated(leading_spaces) + word;
+        } else {
+            accumulated_text += " " + word;
+        }
+
+        word_index++;
+    }
+
+    //If we've processed all words in the current line, add newline and move to next line
+    if (word_index >= current_line_words.size()) {
+        accumulated_text += "\n";
+        current_line_words.clear();
+        line_index++;
+        word_index = 0;
+    }
+
+    label_ref->appendText(accumulated_text);
+    accumulated_text = "";
 }
 
 void start_text_streaming(const QString& content, LatexLabel* label) {
     label_ref = label;
+    line_index = 0;
     word_index = 0;
+    accumulated_text = "";
 
     label->setText("");
-    words = content.split(' ', Qt::SkipEmptyParts);
+    lines = content.split('\n', Qt::KeepEmptyParts);  //Keep empty lines to preserve structure
+    current_line_words.clear();
 
     if (!stream_timer) {
         stream_timer = new QTimer();
@@ -154,8 +206,8 @@ int main(int argc, char* argv[]){
             QTextStream in(&file);
             QString content = in.readAll();
             file.close();
-            label->setText(content);
-            //start_text_streaming(content, label);
+            //label->setText(content);
+            start_text_streaming(content, label);
             label->printSegmentsStructure();
 
             // Save the selected file to settings
