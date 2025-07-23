@@ -145,6 +145,26 @@ if(APPLE AND CMAKE_BUILD_TYPE STREQUAL "Release")
 endif()
 target_link_libraries(Test PRIVATE tinyxml2)
 
+if (SANITIZE)
+  message(STATUS "Enabling sanitizers: ${SANITIZE}")
+
+  # Tell CMake we want Clang; skip if you already set CC/CXX before calling CMake.
+  set(CMAKE_C_COMPILER   clang   CACHE STRING "" FORCE)
+  set(CMAKE_CXX_COMPILER clang++ CACHE STRING "" FORCE)
+
+  # Common flags
+  set(SAN_FLAGS "-fsanitize=${SANITIZE} -fno-omit-frame-pointer -g")
+  # Compile flags
+  add_compile_options(${SAN_FLAGS} -O1)
+  # Link flags (CMake ≥ 3.13).  For older CMake, append to CMAKE_EXE_LINKER_FLAGS instead.
+  add_link_options(${SAN_FLAGS})
+
+  # Sanitizers make most sense in Debug; force it for single-config
+  if (NOT CMAKE_CONFIGURATION_TYPES)      # i.e. Ninja, Makefiles…
+    set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "" FORCE)
+  endif()
+endif()
+
 target_link_libraries(Test PRIVATE
     Qt6::Widgets
     Qt6::Network

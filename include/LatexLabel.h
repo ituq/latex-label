@@ -15,62 +15,51 @@ struct parsedString {
     QString text;
     int type; // Changed from LabelType to int for now
 };
-/*
-
-
-
-
-
-
-struct MarkdownAttributes {
-    int headingLevel = 0;
-    QString url;
-    QString title;
-    QString alt;
-    int listStartNumber = 1;
-    bool isTight = false;
-    char listMarker = '*';
-    QString codeLanguage;
-    MarkdownBlockType parentListType = MarkdownBlockType::UnorderedList; //track parent list type for list items
-    int listItemNumber = 1; //track item number for ordered lists
-
-    MarkdownAttributes() = default;
+enum class fragment_type{
+    latex,
+    text,
+    line,
+    rounded_rect
 };
-*/
-
-
-
-//
-// SUPPORTED SPAN TYPES
-//
-
-
-/*
-struct TextSegment {
-    QString content;
-    TextSegmentType type;
+enum class font_type{
+    normal,
+    bold,
+    italic,
+    italic_bold,
+    mono,
+    strikethrough,
+    underline,
+    link,
+    heading1,
+    heading2,
+    heading3,
+    heading4,
+    heading5,
+    heading6
+};
+struct Fragment{
+    qreal x;
+    qreal y;
+    void* detail;
+};
+struct frag_text_data{
+    QString text;
+    font_type tex_type;
+};
+struct frag_line_data{
+    QPoint from;
+    QPoint to;
+};
+struct frag_rrect_data{
+    QRect rect;
+    qreal radius;
+};
+struct frag_latex_data{
     tex::TeXRender* render;
-
-    // Markdown-specific fields
-    MarkdownBlockType blockType;
-    MarkdownSpanType spanType;
-    MarkdownTextType textType;
-    MarkdownAttributes attributes;
-
-    // For nested content and styling
-    QFont font;
-    QColor color;
-    Qt::Alignment alignment;
-    int indentLevel = 0;
-    bool isNested = false;
-    std::vector<TextSegment> children;
-
-    TextSegment() : render(nullptr), blockType(MarkdownBlockType::Document),
-                   spanType(MarkdownSpanType::Emphasis), textType(MarkdownTextType::Normal),
-                   color(Qt::black), alignment(Qt::AlignLeft) {}
+    QString text;
+    bool isInline;
 };
 
-*/
 // Parser state for md4c callbacks
 struct MarkdownParserState {
     std::vector<Element*> segments;
@@ -106,6 +95,7 @@ public:
 
 
 private:
+    std::vector<Fragment> display_list;
     std::vector<parsedString> content;
     tex::TeXRender* _render;
     QString m_text;

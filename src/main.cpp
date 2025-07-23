@@ -102,6 +102,7 @@ void start_text_streaming(const QString& content, LatexLabel* label) {
 
 
 int main(int argc, char* argv[]){
+    printf("QFont is %lu bytes",sizeof(QFont));
     QApplication app(argc, argv);
     QMainWindow window;
 

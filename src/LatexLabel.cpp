@@ -80,7 +80,7 @@ int LatexLabel::enterBlockCallback(MD_BLOCKTYPE type, void* detail, void* userda
     MarkdownParserState* state = extState->state;
     Element* block = new Element(DisplayType::block);
     block->subtype=malloc(sizeof(MD_BLOCKTYPE));
-    *((MD_BLOCKTYPE*)block->subtype) = type;
+    BLOCKTYPE(block) = type;
     switch(type) {
         case MD_BLOCK_DOC:{
             state->blockStack.push_back(block);
@@ -238,7 +238,6 @@ int LatexLabel::enterSpanCallback(MD_SPANTYPE type, void* detail, void* userdata
 
     switch(type) {
         case MD_SPAN_EM:
-            qDebug()<<"enter italic";
             *subtype=spantype::italic;
             span->data= malloc(sizeof(span_data));
             break;
@@ -259,13 +258,12 @@ int LatexLabel::enterSpanCallback(MD_SPANTYPE type, void* detail, void* userdata
             span->data= malloc(sizeof(span_data));
             break;
         case MD_SPAN_A:{
-            printf("enter link");
 
             *subtype=spantype::link;
             link_data* data = (link_data*)malloc(sizeof(link_data));
 
             if(detail) {
-                MD_SPAN_A_DETAIL* a_detail = static_cast<MD_SPAN_A_DETAIL*>(detail);
+                MD_SPAN_A_DETAIL* a_detail = (MD_SPAN_A_DETAIL*)detail;
                 if(a_detail->href.text) {
                     data->url = QString::fromUtf8(a_detail->href.text, a_detail->href.size);
                 }
@@ -431,7 +429,7 @@ int LatexLabel::textCallback(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size
             data->text = QChar(0xFFFD); // Unicode replacement character
             break;
         case MD_TEXT_BR: //we change the span type to a linebreak
-            *((spantype*)parent_span->subtype)=spantype::linebreak;
+            SPANTYPE(parent_span)=spantype::linebreak;
             break;
         case MD_TEXT_SOFTBR:// do nothing
 
@@ -461,7 +459,7 @@ void LatexLabel::cleanup_segments(std::vector<Element*>& segments) {
         if(elem == nullptr) continue;
 
         //Clean up LaTeX render objects (these are created with getLatexRenderer)
-        if(elem->type==DisplayType::span&& *((spantype*)elem->subtype) ==spantype::latex) {
+        if(elem->type==DisplayType::span&& SPANTYPE(elem) ==spantype::latex) {
             latex_data* data = (latex_data*) elem->data;
             if(data->render != nullptr) {
                 delete data->render;
@@ -526,18 +524,18 @@ void LatexLabel::parseMarkdown(const QString& text) {
 QFont LatexLabel::getFont(const Element* segment) const {
     QFont font("Arial", m_textSize);
 
-    if(segment->type==DisplayType::block&&*((MD_BLOCKTYPE*)segment->subtype)==MD_BLOCK_H){
+    if(segment->type==DisplayType::block&&BLOCKTYPE(segment)==MD_BLOCK_H){
         heading_data* data = (heading_data*) segment->data;
         int headingSize = std::max(8, m_textSize + (6 - data->level) * 4);
         font.setPointSize(headingSize);
         font.setBold(true);
     }
-    else if (segment->type==DisplayType::block&&*((MD_BLOCKTYPE*)segment->subtype)==MD_BLOCK_CODE){
+    else if (segment->type==DisplayType::block&&BLOCKTYPE(segment)==MD_BLOCK_CODE){
         font.setFamily("Monaco");
     }
     else if(segment->type==DisplayType::span){
 
-        switch (*(spantype*)segment->subtype) {
+        switch (SPANTYPE(segment)) {
             case spantype::bold:
                 font.setBold(true);
                 break;
@@ -672,7 +670,6 @@ void LatexLabel::renderSpan(QPainter& painter, const Element& segment, qreal& x,
 
 
 void LatexLabel::renderBlock(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight) {
-    assert(min_x<=x && x<=max_x);
     QFont font = getFont(&segment);
     QFontMetricsF metrics(font);
     qreal currentLineHeight = getLineHeight(segment, metrics);
@@ -845,7 +842,7 @@ void LatexLabel::renderCodeBlock(QPainter& painter, const Element& segment, qrea
     qreal tempY = y;
     for(const Element* child : segment.children) {
 
-        if(child->type==DisplayType::span && *(spantype*)child->subtype== spantype::code) {
+        if(child->type==DisplayType::span && SPANTYPE(child)== spantype::code) {
             QString text = ((span_data*)child->data)->text;
             QStringList lines = text.split('\n');
             tempY += lines.size() * (lineHeight+m_leading);
@@ -1118,31 +1115,16 @@ void LatexLabel::paintEvent(QPaintEvent* event){
 
 void LatexLabel::appendText(QString& text){
     if(text.isEmpty()) return;
-    static bool open_latex_block=false;
-    for (QChar c: text) {
-        if (c=='$') {
-            open_latex_block=!open_latex_block;
-        }
-    }
     m_text += text;
 
-
-
-    if(open_latex_block) {
-        // Don't parse yet, wait for more text
-        // Just trigger a repaint with current segments
-        update();
-        return;
-    }
-
-    // If we get here, we either have complete LaTeX or no LaTeX at the end
-    // Reparse the entire text (much simpler and more reliable)
-    clock_t start = clock();
+    //clock_t start = clock();
     parseMarkdown(m_text);
+    /*
     clock_t end = clock();
     double elapsed = (double)(end - start) / CLOCKS_PER_SEC;
 
     qDebug() << "Parsing took: " << elapsed*1000 << "ms";
+    */
     update();
     adjustSize();
 }
@@ -1195,7 +1177,7 @@ void LatexLabel::printSegmentRecursive(const Element* element, int depth) const 
 
     if(element->type == DisplayType::block) {
         QString blockTypeStr;
-        MD_BLOCKTYPE blockType = *(MD_BLOCKTYPE*)element->subtype;
+        MD_BLOCKTYPE blockType = BLOCKTYPE(element);
         switch(blockType) {
             case MD_BLOCK_DOC: blockTypeStr = "Document"; break;
             case MD_BLOCK_QUOTE: blockTypeStr = "Quote"; break;
@@ -1251,7 +1233,7 @@ void LatexLabel::printSegmentRecursive(const Element* element, int depth) const 
 
     if(element->type == DisplayType::span) {
         QString spanTypeStr;
-        spantype sType = *(spantype*)element->subtype;
+        spantype sType = SPANTYPE(element);
         switch(sType) {
             case spantype::italic: spanTypeStr = "Italic"; break;
             case spantype::bold: spanTypeStr = "Bold"; break;
