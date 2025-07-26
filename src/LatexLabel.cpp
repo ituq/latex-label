@@ -21,9 +21,6 @@ LatexLabel::LatexLabel(QWidget* parent) : QWidget(parent), _render(nullptr), m_t
 }
 
 LatexLabel::~LatexLabel(){
-    if(_render != nullptr) {
-        delete _render;
-    }
     //Clean up all segments and their children
     cleanup_segments(m_segments);
 }
@@ -458,14 +455,7 @@ void LatexLabel::cleanup_segments(std::vector<Element*>& segments) {
     for(Element* elem : segments) {
         if(elem == nullptr) continue;
 
-        //Clean up LaTeX render objects (these are created with getLatexRenderer)
-        if(elem->type==DisplayType::span&& SPANTYPE(elem) ==spantype::latex) {
-            latex_data* data = (latex_data*) elem->data;
-            if(data->render != nullptr) {
-                delete data->render;
-                data->render = nullptr;
-            }
-        }
+
 
         //Recursively clean up children for block elements
         if(elem->type==DisplayType::block) {
@@ -511,8 +501,28 @@ void LatexLabel::parseMarkdown(const QString& text) {
     int result = md_parse(textBytes.constData(), textBytes.size(), &parser, &extendedState);
 
     if(result == 0) {
-        //Move the parsed AST to m_segments
         m_segments = std::move(state.segments);
+
+        //populate m_display_list
+
+        QFontMetricsF fontMetrics = QFontMetricsF(getFont(font_type::normal));
+        qreal lineHeight = fontMetrics.height() * 1.2;
+        qreal x = 5.0;
+        qreal y = 5.0 + fontMetrics.ascent();  // y represents the text baseline
+        qreal maxWidth = width() - 10.0;
+
+        for(const Element* segment : m_segments) {
+            if(segment->type==DisplayType::block){
+                renderBlock(*segment, x, y,5.0,width(), lineHeight);
+            }
+            else{
+                renderSpan(*segment, x, y,5.0,width(), lineHeight);
+            }
+
+        }
+        widget_height=y+50.0; // Add some padding at the bottom
+        setMinimumHeight(widget_height);
+        updateGeometry();
     } else {
         //Clean up any partial parsing results
         cleanup_segments(state.segments);
@@ -520,7 +530,66 @@ void LatexLabel::parseMarkdown(const QString& text) {
     }
 }
 
+QFont LatexLabel::getFont(font_type type) const {
+    // Start with the base font
+    QFont font("Arial", m_textSize);
 
+    switch (type) {
+        case font_type::bold:
+            font.setBold(true);
+            break;
+
+        case font_type::italic:
+            font.setItalic(true);
+            break;
+
+        case font_type::italic_bold:
+            font.setBold(true);
+            font.setItalic(true);
+            break;
+
+        case font_type::mono:
+            font.setFamily("Monaco");
+            break;
+        case font_type::strikethrough:
+                    font.setStrikeOut(true);
+                    break;
+
+        case font_type::underline:
+        case font_type::link: // Links are also underlined
+            font.setUnderline(true);
+            break;
+
+        // Handle all heading levels
+        case font_type::heading1:
+        case font_type::heading2:
+        case font_type::heading3:
+        case font_type::heading4:
+        case font_type::heading5:
+        case font_type::heading6:
+        {
+            int level = 0;
+            if (type == font_type::heading1) level = 1;
+            else if (type == font_type::heading2) level = 2;
+            else if (type == font_type::heading3) level = 3;
+            else if (type == font_type::heading4) level = 4;
+            else if (type == font_type::heading5) level = 5;
+            else if (type == font_type::heading6) level = 6;
+            // Original formula: textSize + (6 - level) * 4
+            int headingSize = std::max(8, m_textSize + (6 - level) * 4);
+            font.setPointSize(headingSize);
+            font.setBold(true);
+            break;
+        }
+
+        case font_type::normal:
+        default:
+            // Do nothing, use the default font
+            break;
+    }
+
+    return font;
+}
 QFont LatexLabel::getFont(const Element* segment) const {
     QFont font("Arial", m_textSize);
 
@@ -578,7 +647,7 @@ qreal LatexLabel::getLineHeight(const Element& segment, const QFontMetricsF& met
     return metrics.height();
 }
 
-void LatexLabel::renderSpan(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal lineHeight,QFont* font_passed) {
+void LatexLabel::renderSpan(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal lineHeight,QFont* font_passed) {
     assert(min_x<=x && x<=max_x);
     QFont font;
     if(font_passed){
@@ -590,12 +659,10 @@ void LatexLabel::renderSpan(QPainter& painter, const Element& segment, qreal& x,
     spantype type = *(spantype*)segment.subtype;
     QColor color = type==spantype::link ? Qt::blue : Qt::black;
 
-    painter.setFont(font);
-    painter.setPen(color);
+
 
     QFontMetricsF metrics(font);
-    //Remember the left margin for line wrapping
-    //m_leftMargin = x;
+
 
 
     // Handle different text types
@@ -624,11 +691,9 @@ void LatexLabel::renderSpan(QPainter& painter, const Element& segment, qreal& x,
         }
 
         // Draw LaTeX expression
-        painter.save();
         qreal latexY = y - (renderHeight - data->render->getDepth());
-        tex::Graphics2D_qt g2(&painter);
-        data->render->draw(g2, static_cast<int>(x), static_cast<int>(latexY));
-        painter.restore();
+        m_display_list.push_back(Fragment(x,latexY,data->render,data->text,data->isInline));
+
 
         if(data->isInline){
             x += renderWidth + metrics.horizontalAdvance(" ");
@@ -662,14 +727,13 @@ void LatexLabel::renderSpan(QPainter& painter, const Element& segment, qreal& x,
             x = min_x;
             y += lineHeight+m_leading;
         }
-
-        painter.drawText(QPointF(x, y), wordWithSpace);
+        m_display_list.push_back(Fragment(x,y,wordWithSpace,font));
         x += wordWidth;
     }
 }
 
 
-void LatexLabel::renderBlock(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight) {
+void LatexLabel::renderBlock(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight){
     QFont font = getFont(&segment);
     QFontMetricsF metrics(font);
     qreal currentLineHeight = getLineHeight(segment, metrics);
@@ -679,43 +743,41 @@ void LatexLabel::renderBlock(QPainter& painter, const Element& segment, qreal& x
             // Document block - render all children
             for(const Element* child : segment.children) {
                 if(child->type==DisplayType::block) {
-                    renderBlock(painter, *child, x, y, min_x,max_x, lineHeight);
+                    renderBlock(*child, x, y, min_x,max_x, lineHeight);
                 } else {
-                    renderSpan(painter, *child, x, y, min_x,max_x, lineHeight);
+                    renderSpan(*child, x, y, min_x,max_x, lineHeight);
                 }
             }
             break;
         case MD_BLOCK_H:
-            renderHeading(painter, segment, x, y, min_x,max_x, lineHeight);
+            renderHeading(segment, x, y, min_x,max_x, lineHeight);
             break;
         case MD_BLOCK_CODE:
-            renderCodeBlock(painter, segment, x, y, min_x,max_x, lineHeight);
+            renderCodeBlock(segment, x, y, min_x,max_x, lineHeight);
             break;
         case MD_BLOCK_QUOTE:
-            renderBlockquote(painter, segment, x, y, min_x,max_x, lineHeight);
+            renderBlockquote(segment, x, y, min_x,max_x, lineHeight);
             break;
         case MD_BLOCK_UL:
         case MD_BLOCK_OL:
         case MD_BLOCK_LI:
-            renderListElement(painter, segment, x, y, min_x,max_x, lineHeight);
+            renderListElement(segment, x, y, min_x,max_x, lineHeight);
             break;
         case MD_BLOCK_TABLE:
             //renderTable(painter, segment, x, y, min_x,max_x, maxWidth, lineHeight);
             break;
-        case MD_BLOCK_HR:
+        case MD_BLOCK_HR:{
             // Draw horizontal line
             y += 2*lineHeight;
-            painter.save();
-            painter.setPen(QPen(Qt::gray, 2));
-            painter.drawLine(5, y, width()-5, y);
-            painter.restore();
+            m_display_list.push_back(Fragment(x,y,QPoint(width()-5,y)));
             y += 2*lineHeight;
             break;
+        }
         case MD_BLOCK_P:
             {
                 QFont baseFont("Arial", m_textSize);
                 for(const Element* child : segment.children) {
-                        renderSpan(painter, *child, x, y,min_x,max_x, lineHeight);
+                        renderSpan(*child, x, y,min_x,max_x, lineHeight);
                 }
                 x = min_x;
                 y += currentLineHeight;
@@ -725,14 +787,14 @@ void LatexLabel::renderBlock(QPainter& painter, const Element& segment, qreal& x
             // Default block rendering
             {
                 for(const auto& child : segment.children) {
-                    renderSpan(painter, *child, x, y,min_x,max_x, lineHeight);
+                    renderSpan(*child, x, y,min_x,max_x, lineHeight);
                 }
             }
             break;
     }
 }
 
-void LatexLabel::renderListElement(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight) {
+void LatexLabel::renderListElement(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight) {
 
     MD_BLOCKTYPE type =*(MD_BLOCKTYPE*)segment.subtype;
 
@@ -740,10 +802,8 @@ void LatexLabel::renderListElement(QPainter& painter, const Element& segment, qr
     if(type==MD_BLOCK_LI) {
         list_item_data* data =(list_item_data*) segment.data;
         //draw list marker
-        painter.save();
         QFont baseFont("Arial", m_textSize);
-        painter.setFont(baseFont);
-        painter.setPen(Qt::black);
+
 
 
         QString marker;
@@ -755,15 +815,14 @@ void LatexLabel::renderListElement(QPainter& painter, const Element& segment, qr
             marker = "• "; //TODO: replace with actual markers
         }
 
-
-        painter.drawText(QPointF(x, y), marker);
+        m_display_list.push_back(Fragment(x,y,marker,baseFont));
 
         //adjust x position based on marker width
         QFontMetricsF metrics(baseFont);
         qreal markerWidth = metrics.horizontalAdvance(marker);
         x += markerWidth + 2.0;
 
-        painter.restore();
+
         qreal left_border = x;
 
 
@@ -772,14 +831,14 @@ void LatexLabel::renderListElement(QPainter& painter, const Element& segment, qr
         QFont listFont("Arial", m_textSize);
         for(const Element* child : segment.children) {
             if(child->type==DisplayType::span) {
-                renderSpan(painter, *child, x, y, left_border,max_x, lineHeight);
+                renderSpan(*child, x, y, left_border,max_x, lineHeight);
             }
             else{
                 if(x>left_border){
                     x=left_border;
                     y+=lineHeight*1.3;
                 }
-                renderBlock(painter, *child, x, y, left_border,max_x, lineHeight);
+                renderBlock(*child, x, y, left_border,max_x, lineHeight);
             }
         }
         y += lineHeight * 1.3;
@@ -788,7 +847,7 @@ void LatexLabel::renderListElement(QPainter& painter, const Element& segment, qr
         // List container - render children
         for(const Element* child : segment.children) {
             if(child->type==DisplayType::block) {
-                renderBlock(painter, *child, x, y, min_x,max_x, lineHeight);
+                renderBlock(*child, x, y, min_x,max_x, lineHeight);
             }
         }
         // Add spacing after the entire list
@@ -796,13 +855,10 @@ void LatexLabel::renderListElement(QPainter& painter, const Element& segment, qr
     }
 }
 
-void LatexLabel::renderHeading(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight) {
-    painter.save();
+void LatexLabel::renderHeading(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight) {
 
     QFont font = getFont(&segment);
     QFontMetricsF metrics(font);
-    painter.setFont(font);
-    painter.setPen(Qt::black);
 
     qreal headingLineHeight = getLineHeight(segment, metrics);
 
@@ -816,24 +872,21 @@ void LatexLabel::renderHeading(QPainter& painter, const Element& segment, qreal&
 
     // Render heading content with heading font inherited
     for(const Element* child : segment.children) {
-        renderSpan(painter, *child, x, y, min_x,max_x, headingLineHeight,&font);
+        renderSpan(*child, x, y, min_x,max_x, headingLineHeight,&font);
     }
 
     // Add spacing after heading and move to next line
     x = min_x;
     y += headingLineHeight * 0.8; // Increased spacing after heading
 
-    painter.restore();
 }
 
-void LatexLabel::renderCodeBlock(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight) {
-    painter.save();
+void LatexLabel::renderCodeBlock(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight) {
+
 
     // Set code font
     QFont font = getFont(&segment);
     QFontMetricsF fm(font);
-    painter.setFont(font);
-    painter.setPen(Qt::white);
 
     y += 10.0;
     double startY = y;
@@ -850,11 +903,7 @@ void LatexLabel::renderCodeBlock(QPainter& painter, const Element& segment, qrea
     }
 
     // Draw background first
-    painter.setPen(Qt::gray);
-    painter.setBrush(Qt::white);
-
-    painter.drawRoundedRect(QRectF(min_x, y-fm.ascent(), max_x - 10, tempY - startY),10,10);
-    painter.setPen(Qt::black);
+    m_display_list.push_back(Fragment(x,y,QRect(min_x, y-fm.ascent(), max_x - 10, tempY - startY),10));
 
 
     x+=10;
@@ -866,7 +915,7 @@ void LatexLabel::renderCodeBlock(QPainter& painter, const Element& segment, qrea
             QStringList lines = text.split('\n');
 
             for(const QString& line : lines) {
-                painter.drawText(QPointF(x, y), line);
+                m_display_list.push_back(Fragment(x,y,line,font));
                 y += lineHeight+m_leading;
             }
         }
@@ -875,11 +924,9 @@ void LatexLabel::renderCodeBlock(QPainter& painter, const Element& segment, qrea
     y += 10.0; // Bottom margin
     x = 5.0;
 
-    painter.restore();
 }
 
-void LatexLabel::renderBlockquote(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x, qreal max_x, qreal& lineHeight) {
-    painter.save();
+void LatexLabel::renderBlockquote(const Element& segment, qreal& x, qreal& y, qreal min_x, qreal max_x, qreal& lineHeight) {
     // Add spacing before blockquote and move to next line if not at start
     y += lineHeight * 0.5; // Add spacing before blockquote
 
@@ -896,24 +943,23 @@ void LatexLabel::renderBlockquote(QPainter& painter, const Element& segment, qre
     QFontMetricsF metrics(blockquoteFont);
     for(const Element* child : segment.children) {
         if(child->type==DisplayType::block) {
-            renderBlock(painter, *child, x, y, min_x+50,max_x, lineHeight);
+            renderBlock(*child, x, y, min_x+50,max_x, lineHeight);
         } else {
-            renderSpan(painter, *child, x, y, min_x+50, max_x, lineHeight, &blockquoteFont);
+            renderSpan(*child, x, y, min_x+50, max_x, lineHeight, &blockquoteFont);
         }
     }
 
     //draw line left of quote
-    painter.setPen(QPen(Qt::gray, 3));
-    painter.drawLine(startX-5, startY - metrics.ascent(), startX-5, y-metrics.height() + metrics.descent()); // Draw from start to end of content
+    m_display_list.push_back(Fragment(startX-5, startY - metrics.ascent(),QPoint(startX-5, y-metrics.height() + metrics.descent()),3));
 
     // Reset position and add spacing after blockquote
     x = min_x;
     y += lineHeight * 1.2; // Add more spacing after blockquote
 
-    painter.restore();
+
 }
 
-void LatexLabel::renderTable(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight) {
+void LatexLabel::renderTable(const Element& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight) {
     //Convert markdown table to LaTeX table syntax
     /*
     y+=lineHeight;
@@ -1078,30 +1124,46 @@ void LatexLabel::paintEvent(QPaintEvent* event){
     //QRectF area_to_redraw = event->rect();
     //clock_t start = clock();
 
+
     QPainter painter(this);
     painter.fillRect(rect(), QColor(255, 255, 255)); // White background
     painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(Qt::black);
 
-    QFontMetricsF fontMetrics = painter.fontMetrics();
-    qreal lineHeight = fontMetrics.height() * 1.2;
-    qreal x = 5.0;
-    qreal y = 5.0 + fontMetrics.ascent();  // y represents the text baseline
-    qreal maxWidth = width() - 10.0;
 
-    for(const Element* segment : m_segments) {
-        // Check if we're still within the widget bounds
-        if(y > height() - 5.0) break;
-        if(segment->type==DisplayType::block){
-            renderBlock(painter, *segment, x, y,5.0,width(), lineHeight);
+
+    for(Fragment& f: m_display_list){
+        switch (f.type) {
+            case fragment_type::latex:{
+                frag_latex_data* data = (frag_latex_data*) f.data;
+                painter.save();
+                tex::Graphics2D_qt g2(&painter);
+                data->render->draw(g2, f.x, f.y);
+                painter.restore();
+                break;
+            }
+            case fragment_type::line:{
+                painter.save();
+                frag_line_data* data = (frag_line_data*) f.data;
+                painter.setPen(QPen(Qt::gray, data->width));
+
+                painter.drawLine(QPoint(f.x,f.y),data->to);
+                painter.restore();
+                break;
+            }
+            case fragment_type::rounded_rect:{
+                frag_rrect_data* data = (frag_rrect_data*) f.data;
+                painter.drawRoundedRect(data->rect,data->radius,data->radius);
+                break;
+            }
+            case fragment_type::text:{
+                frag_text_data* data = (frag_text_data*) f.data;
+                painter.setFont(data->font);
+                painter.drawText(f.x,f.y,data->text);
+                break;
+            }
         }
-        else{
-            renderSpan(painter, *segment, x, y,5.0,width(), lineHeight);
-        }
-
     }
-    widget_height=y+50.0; // Add some padding at the bottom
-    setMinimumHeight(widget_height);
-    updateGeometry();
     /*
 
     clock_t end = clock();
@@ -1118,6 +1180,7 @@ void LatexLabel::appendText(QString& text){
     m_text += text;
 
     //clock_t start = clock();
+    deleteDisplayList();
     parseMarkdown(m_text);
     /*
     clock_t end = clock();
@@ -1128,8 +1191,40 @@ void LatexLabel::appendText(QString& text){
     update();
     adjustSize();
 }
+void LatexLabel::deleteDisplayList(){
+    if(m_display_list.empty()) return;
+    for (Fragment& f : m_display_list) {
+        switch (f.type) {
+            case fragment_type::latex:{
+                frag_latex_data* data = (frag_latex_data*) f.data;
+                delete data->render;
+                delete data;
+                break;
+            }
+            case fragment_type::line:{
+                frag_line_data* data = (frag_line_data*) f.data;
+                delete data;
+                break;
+            }
+            case fragment_type::rounded_rect:{
+                frag_rrect_data* data = (frag_rrect_data*) f.data;
+                delete data;
+                break;
+            }
+            case fragment_type::text:{
+                frag_text_data* data = (frag_text_data*) f.data;
+                delete data;
+                break;
+            }
+        }
+
+    }
+    m_display_list.clear();
+}
 
 void LatexLabel::setText(QString text){
+    deleteDisplayList();
+    m_display_list.clear();
     m_text = text;
     clock_t start = clock();
     parseMarkdown(m_text);

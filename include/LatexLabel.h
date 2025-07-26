@@ -37,18 +37,14 @@ enum class font_type{
     heading5,
     heading6
 };
-struct Fragment{
-    qreal x;
-    qreal y;
-    void* detail;
-};
+
 struct frag_text_data{
     QString text;
-    font_type tex_type;
+    QFont font;
 };
 struct frag_line_data{
-    QPoint from;
     QPoint to;
+    int width;
 };
 struct frag_rrect_data{
     QRect rect;
@@ -59,6 +55,27 @@ struct frag_latex_data{
     QString text;
     bool isInline;
 };
+typedef struct Fragment{
+    qreal x;
+    qreal y;
+    fragment_type type;
+    void* data;
+    Fragment(qreal x,qreal y,QString text, QFont font):x(x),y(y),type(fragment_type::text){
+        //text constructor
+        data = new frag_text_data(text,font);
+    }
+    Fragment(qreal x, qreal y, QRect rect,int radius):x(x),y(y),type(fragment_type::rounded_rect){
+        //rounded rect constructor
+        data = new frag_rrect_data(rect,radius);
+    }
+    Fragment(qreal x, qreal y, QPoint to, int width = 1): x(x),y(y), type(fragment_type::line){
+        //line constructor
+        data = new frag_line_data(to,width);
+    }
+    Fragment(qreal x, qreal y, tex::TeXRender* render, QString text, bool isInline): x(x),y(y), type(fragment_type::latex){
+        data = new frag_latex_data(render,text,isInline);
+    }
+}Fragment;
 
 // Parser state for md4c callbacks
 struct MarkdownParserState {
@@ -95,7 +112,7 @@ public:
 
 
 private:
-    std::vector<Fragment> display_list;
+    std::vector<Fragment> m_display_list;
     std::vector<parsedString> content;
     tex::TeXRender* _render;
     QString m_text;
@@ -107,17 +124,18 @@ private:
     void parseMarkdown(const QString& text);
 
     // Markdown rendering helpers
-    void renderBlock(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
-    void renderSpan(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal lineHeight, QFont* font_passed=nullptr);
-    void renderListElement(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
-    void renderHeading(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
-    void renderCodeBlock(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
-    void renderBlockquote(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
-    void renderTextSegment(QPainter& painter, const Element* segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal lineHeight);
-    void renderTable(QPainter& painter, const Element& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight);
+    void renderBlock(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
+    void renderSpan(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal lineHeight, QFont* font_passed=nullptr);
+    void renderListElement(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
+    void renderHeading(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
+    void renderCodeBlock(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
+    void renderBlockquote(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
+    void renderTextSegment(const Element* segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal lineHeight);
+    void renderTable(const Element& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight);
 
     // Font and styling helpers
     QFont getFont(const Element* segment) const;
+    QFont getFont(font_type type) const;
     qreal getLineHeight(const Element& segment, const QFontMetricsF& metrics) const;
 
     // md4c callback functions
@@ -135,6 +153,7 @@ private:
 
     // Cleanup methods for AST elements
     void cleanup_segments(std::vector<Element*>& elements);  // free all pointers in AST
+    void deleteDisplayList();
 
 protected:
     void paintEvent(QPaintEvent* event) override;
