@@ -139,7 +139,7 @@ private:
     void renderCodeBlock(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
     void renderBlockquote(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
     void renderTextSegment(const Element* segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal lineHeight);
-    void renderTable(const Element& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight);
+    void renderTable(const Element& segment, qreal& x, qreal& y, qreal min_x, qreal max_x, qreal& lineHeight);
 
     // Font and styling helpers
     QFont getFont(const Element* segment) const;

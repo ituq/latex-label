@@ -724,16 +724,18 @@ void LatexLabel::renderSpan(const Element& segment, qreal& x, qreal& y, qreal mi
             y += metrics.lineSpacing();
             continue;
         }
-        QString wordWithSpace = word + " ";
-        int wordWidth = metrics.horizontalAdvance(wordWithSpace);
+        //Calculate word width
+        int wordWidth = metrics.horizontalAdvance(word);
+        int spaceWidth = metrics.horizontalAdvance(" ");
+        int totalWidth = wordWidth + spaceWidth;
 
         //Check if word fits on current line
-        if(x + wordWidth > max_x) {
+        if(x + totalWidth > max_x) {
             x = min_x;
             y += metrics.lineSpacing();
         }
-        m_display_list.push_back(Fragment(QRect(x,y-metrics.ascent(),wordWidth,metrics.height()),wordWithSpace,font));
-        x += wordWidth;
+        m_display_list.push_back(Fragment(QRect(x,y-metrics.ascent(),wordWidth,metrics.height()),word,font));
+        x += totalWidth;
     }
 }
 
@@ -769,7 +771,7 @@ void LatexLabel::renderBlock(const Element& segment, qreal& x, qreal& y, qreal m
             renderListElement(segment, x, y, min_x,max_x, lineHeight);
             break;
         case MD_BLOCK_TABLE:
-            //renderTable(painter, segment, x, y, min_x,max_x, maxWidth, lineHeight);
+            renderTable(segment, x, y, min_x, max_x, lineHeight);
             break;
         case MD_BLOCK_HR:{
             // Draw horizontal line
@@ -972,40 +974,76 @@ void LatexLabel::renderBlockquote(const Element& segment, qreal& x, qreal& y, qr
 
 }
 
-void LatexLabel::renderTable(const Element& segment, qreal& x, qreal& y, qreal maxWidth, qreal& lineHeight) {
+void LatexLabel::renderTable(const Element& segment, qreal& x, qreal& y, qreal min_x, qreal max_x, qreal& lineHeight) {
     //Convert markdown table to LaTeX table syntax
-    /*
-    y+=lineHeight;
+    y += lineHeight;
     QString latexTable;
     int columnCount = 0;
     bool hasHeader = false;
 
+    //Helper function to extract text content from Element recursively
+    std::function<QString(const Element*)> extractTextContent = [&](const Element* elem) -> QString {
+        QString content;
+        if(elem->type == DisplayType::span && elem->data) {
+            spantype sType = SPANTYPE(elem);
+            switch(sType) {
+                case spantype::normal:
+                case spantype::bold:
+                case spantype::italic:
+                case spantype::italic_bold:
+                case spantype::code:
+                case spantype::strikethrough:
+                case spantype::underline: {
+                    span_data* data = (span_data*)elem->data;
+                    content += data->text;
+                    break;
+                }
+                case spantype::link: {
+                    link_data* data = (link_data*)elem->data;
+                    content += data->title;
+                    break;
+                }
+                case spantype::latex: {
+                    latex_data* data = (latex_data*)elem->data;
+                    content += data->text;
+                    break;
+                }
+                case spantype::linebreak:
+                    content += " ";
+                    break;
+                default:
+                    break;
+            }
+        }
+        for(const Element* child : elem->children) {
+            content += extractTextContent(child);
+        }
+        return content.trimmed();
+    };
+
     //First pass: determine column count and structure
-    for(const auto& child : segment.children) {
-        if(child.type == TextSegmentType::MarkdownBlock) {
-            if(child.blockType == MarkdownBlockType::TableHead) {
+    for(const Element* child : segment.children) {
+        if(child->type == DisplayType::block) {
+            MD_BLOCKTYPE blockType = BLOCKTYPE(child);
+            if(blockType == MD_BLOCK_THEAD) {
                 hasHeader = true;
                 //Find first row to determine column count
-                for(const auto& headChild : child.children) {
-                    if(headChild.type == TextSegmentType::MarkdownBlock &&
-                       headChild.blockType == MarkdownBlockType::TableRow) {
-                        for(const auto& rowChild : headChild.children) {
-                            if(rowChild.type == TextSegmentType::MarkdownBlock &&
-                               rowChild.blockType == MarkdownBlockType::TableHeader) {
+                for(const Element* headChild : child->children) {
+                    if(headChild->type == DisplayType::block && BLOCKTYPE(headChild) == MD_BLOCK_TR) {
+                        for(const Element* rowChild : headChild->children) {
+                            if(rowChild->type == DisplayType::block && BLOCKTYPE(rowChild) == MD_BLOCK_TH) {
                                 columnCount++;
                             }
                         }
                         break; //only count first row
                     }
                 }
-            } else if(child.blockType == MarkdownBlockType::TableBody && columnCount == 0) {
+            } else if(blockType == MD_BLOCK_TBODY && columnCount == 0) {
                 //fallback: count columns from first data row if no header
-                for(const auto& bodyChild : child.children) {
-                    if(bodyChild.type == TextSegmentType::MarkdownBlock &&
-                       bodyChild.blockType == MarkdownBlockType::TableRow) {
-                        for(const auto& rowChild : bodyChild.children) {
-                            if(rowChild.type == TextSegmentType::MarkdownBlock &&
-                               rowChild.blockType == MarkdownBlockType::TableData) {
+                for(const Element* bodyChild : child->children) {
+                    if(bodyChild->type == DisplayType::block && BLOCKTYPE(bodyChild) == MD_BLOCK_TR) {
+                        for(const Element* rowChild : bodyChild->children) {
+                            if(rowChild->type == DisplayType::block && BLOCKTYPE(rowChild) == MD_BLOCK_TD) {
                                 columnCount++;
                             }
                         }
@@ -1018,13 +1056,12 @@ void LatexLabel::renderTable(const Element& segment, qreal& x, qreal& y, qreal m
 
     if(columnCount == 0) {
         //fallback to simple rendering if table structure can't be determined
-        for(const auto& child : segment.children) {
-            if(child.type == TextSegmentType::MarkdownBlock) {
-                renderBlockElement(painter, child, x, y, maxWidth, lineHeight);
+        for(const Element* child : segment.children) {
+            if(child->type == DisplayType::block) {
+                renderBlock(*child, x, y, min_x, max_x, lineHeight);
             }
         }
         return;
-
     }
 
     //Build LaTeX table
@@ -1034,30 +1071,17 @@ void LatexLabel::renderTable(const Element& segment, qreal& x, qreal& y, qreal m
     }
     latexTable += "}\n\\hline\n";
 
-    //extract table content
-    std::function<QString(const TextSegment&)> extractTextContent = [&](const TextSegment& seg) -> QString {
-        QString content;
-        if(seg.type == TextSegmentType::MarkdownText) {
-            content += seg.content;
-        }
-        for(const auto& child : seg.children) {
-            content += extractTextContent(child);
-        }
-        return content.trimmed();
-    };
-
     //process table rows
-    for(const auto& child : segment.children) {
-        if(child.type == TextSegmentType::MarkdownBlock) {
-            if(child.blockType == MarkdownBlockType::TableHead) {
+    for(const Element* child : segment.children) {
+        if(child->type == DisplayType::block) {
+            MD_BLOCKTYPE blockType = BLOCKTYPE(child);
+            if(blockType == MD_BLOCK_THEAD) {
                 //process header rows
-                for(const auto& headChild : child.children) {
-                    if(headChild.type == TextSegmentType::MarkdownBlock &&
-                       headChild.blockType == MarkdownBlockType::TableRow) {
+                for(const Element* headChild : child->children) {
+                    if(headChild->type == DisplayType::block && BLOCKTYPE(headChild) == MD_BLOCK_TR) {
                         QStringList cellContents;
-                        for(const auto& rowChild : headChild.children) {
-                            if(rowChild.type == TextSegmentType::MarkdownBlock &&
-                               rowChild.blockType == MarkdownBlockType::TableHeader) {
+                        for(const Element* rowChild : headChild->children) {
+                            if(rowChild->type == DisplayType::block && BLOCKTYPE(rowChild) == MD_BLOCK_TH) {
                                 QString cellText = extractTextContent(rowChild);
                                 if(!cellText.isEmpty()) {
                                     cellContents.append("\\textbf{" + cellText + "}");
@@ -1071,15 +1095,13 @@ void LatexLabel::renderTable(const Element& segment, qreal& x, qreal& y, qreal m
                         }
                     }
                 }
-            } else if(child.blockType == MarkdownBlockType::TableBody) {
+            } else if(blockType == MD_BLOCK_TBODY) {
                 //process data rows
-                for(const auto& bodyChild : child.children) {
-                    if(bodyChild.type == TextSegmentType::MarkdownBlock &&
-                       bodyChild.blockType == MarkdownBlockType::TableRow) {
+                for(const Element* bodyChild : child->children) {
+                    if(bodyChild->type == DisplayType::block && BLOCKTYPE(bodyChild) == MD_BLOCK_TR) {
                         QStringList cellContents;
-                        for(const auto& rowChild : bodyChild.children) {
-                            if(rowChild.type == TextSegmentType::MarkdownBlock &&
-                               rowChild.blockType == MarkdownBlockType::TableData) {
+                        for(const Element* rowChild : bodyChild->children) {
+                            if(rowChild->type == DisplayType::block && BLOCKTYPE(rowChild) == MD_BLOCK_TD) {
                                 QString cellText = extractTextContent(rowChild);
                                 if(!cellText.isEmpty()) {
                                     cellContents.append("\\text{" + cellText + "}");
@@ -1100,37 +1122,33 @@ void LatexLabel::renderTable(const Element& segment, qreal& x, qreal& y, qreal m
     latexTable += "\\hline\n\\end{array}";
 
     //render the LaTeX table as a display block
-    tex::TeXRender* tableRender = parseDisplayLatexExpression(latexTable);
+    tex::TeXRender* tableRender = getLatexRenderer(latexTable, false, m_textSize);
     if(tableRender != nullptr) {
         qreal renderWidth = tableRender->getWidth();
         qreal renderHeight = tableRender->getHeight();
 
         //center the table horizontally
-        qreal tableX = maxWidth / 2 - renderWidth / 2;
-        if(tableX < 5.0) tableX = 5.0; //minimum left margin
+        qreal tableX = (max_x - min_x) / 2 - renderWidth / 2 + min_x;
+        if(tableX < min_x) tableX = min_x; //minimum left margin
 
         //add some vertical spacing before the table
         y += lineHeight;
 
         //draw the LaTeX table
         qreal tableY = y - (renderHeight - tableRender->getDepth());
-        tex::Graphics2D_qt g2(&painter);
-        tableRender->draw(g2, static_cast<int>(tableX), static_cast<int>(tableY));
+        m_display_list.push_back(Fragment(QRect(tableX, tableY, renderWidth, renderHeight), tableRender, latexTable, false));
 
         //update position after table
-        x = 5.0; //reset to left margin
+        x = min_x; //reset to left margin
         y += renderHeight + lineHeight; //add spacing after table
-
-        delete tableRender;
     } else {
         //fallback to simple rendering if LaTeX parsing fails
-        for(const auto& child : segment.children) {
-            if(child.type == TextSegmentType::MarkdownBlock) {
-                renderBlockElement(painter, child, x, y, maxWidth, lineHeight);
+        for(const Element* child : segment.children) {
+            if(child->type == DisplayType::block) {
+                renderBlock(*child, x, y, min_x, max_x, lineHeight);
             }
         }
     }
-    */
 }
 
 void LatexLabel::paintEvent(QPaintEvent* event){
