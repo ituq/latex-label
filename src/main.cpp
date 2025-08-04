@@ -102,7 +102,6 @@ void start_text_streaming(const QString& content, LatexLabel* label) {
 
 
 int main(int argc, char* argv[]){
-    printf("QFont is %lu bytes",sizeof(QFont));
     QApplication app(argc, argv);
     QMainWindow window;
 
@@ -112,7 +111,6 @@ int main(int argc, char* argv[]){
     // Get the absolute path to the resources directory
     QString appDir = QCoreApplication::applicationDirPath();
     QString resPath = appDir + "/res";
-    std::cout << "Resource path: " << resPath.toStdString() << std::endl;
 
     // Initialize MicroTeX with the absolute path to resources
     tex::LaTeX::init(resPath.toStdString());
@@ -209,7 +207,7 @@ int main(int argc, char* argv[]){
             file.close();
             label->setText(content);
             //start_text_streaming(content, label);
-            label->printSegmentsStructure();
+            //label->printSegmentsStructure();
 
             // Save the selected file to settings
             settings.setValue("lastSelectedFile", selectedFile);

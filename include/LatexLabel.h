@@ -2,6 +2,10 @@
 #include <QString>
 #include <QPainter>
 #include <QRect>
+#include <QGuiApplication>
+#include <QClipboard>
+#include <QKeyEvent>
+#include <QFocusEvent>
 
 #include <md4c.h>
 #include <vector>
@@ -56,23 +60,23 @@ struct frag_latex_data{
     bool isInline;
 };
 typedef struct Fragment{
-    qreal x;
-    qreal y;
+    QRect bounding_box;
     fragment_type type;
+    bool is_highlighted;
     void* data;
-    Fragment(qreal x,qreal y,QString text, QFont font):x(x),y(y),type(fragment_type::text){
+    Fragment(QRect bounding_box,QString text, QFont font):bounding_box(bounding_box),is_highlighted(false),type(fragment_type::text){
         //text constructor
         data = new frag_text_data(text,font);
     }
-    Fragment(qreal x, qreal y, QRect rect,int radius):x(x),y(y),type(fragment_type::rounded_rect){
+    Fragment(QRect bounding_box, QRect rect,int radius):bounding_box(bounding_box),is_highlighted(false),type(fragment_type::rounded_rect){
         //rounded rect constructor
         data = new frag_rrect_data(rect,radius);
     }
-    Fragment(qreal x, qreal y, QPoint to, int width = 1): x(x),y(y), type(fragment_type::line){
+    Fragment(QRect bounding_box, QPoint to, int width = 1): bounding_box(bounding_box),is_highlighted(false), type(fragment_type::line){
         //line constructor
         data = new frag_line_data(to,width);
     }
-    Fragment(qreal x, qreal y, tex::TeXRender* render, QString text, bool isInline): x(x),y(y), type(fragment_type::latex){
+    Fragment(QRect bounding_box, tex::TeXRender* render, QString text, bool isInline): bounding_box(bounding_box),is_highlighted(false), type(fragment_type::latex){
         data = new frag_latex_data(render,text,isInline);
     }
 }Fragment;
@@ -112,13 +116,17 @@ public:
 
 
 private:
+    QPalette m_pallete = QGuiApplication::palette();
     std::vector<Fragment> m_display_list;
     std::vector<parsedString> content;
     tex::TeXRender* _render;
     QString m_text;
+    QString m_raw_text; //without markdown formatting
     std::vector<Element*> m_segments;
     int m_textSize;
     double m_leading=3.0;
+    bool m_is_dragging=false;
+    Fragment* m_selected=nullptr;
 
     //void parseText();
     void parseMarkdown(const QString& text);
@@ -157,4 +165,10 @@ private:
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
 };
