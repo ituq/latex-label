@@ -12,6 +12,7 @@
 #include <QMouseEvent>
 #include <QResizeEvent>
 #include <md4c.h>
+#include <vector>
 
 static double widget_height=200;
 
@@ -718,6 +719,7 @@ void LatexLabel::renderSpan(const Element& segment, qreal& x, qreal& y, qreal mi
 
 
     QStringList words = text.split(' ', Qt::SkipEmptyParts);
+
     for(const QString& word : words) {
         if(word=="\n"){
             x = min_x;
@@ -793,6 +795,7 @@ void LatexLabel::renderBlock(const Element& segment, qreal& x, qreal& y, qreal m
         default:
             // Default block rendering
             {
+                qDebug()<<"using default block rendering";
                 for(const auto& child : segment.children) {
                     renderSpan(*child, x, y,min_x,max_x, lineHeight);
                 }
@@ -973,182 +976,175 @@ void LatexLabel::renderBlockquote(const Element& segment, qreal& x, qreal& y, qr
 
 
 }
+QString column_string(int n){
+    QString res="|";
+    for (int i=0; i<n; i++) {
+        res+="c|";
+    }
+}
+
+void LatexLabel::calculate_table_dimensions(const Element& segment, int* max_width_of_col, int* max_height_of_row, int columns, int rows, qreal min_x, qreal max_x) {
+    //Calculate equal column widths to fill available space
+    int padding = 5;
+    qreal available_width = max_x - min_x - 10; //subtract margin
+    qreal column_width = (available_width - (columns + 1) * 2 * padding) / columns; //subtract padding for all columns
+
+    //Set all columns to equal width
+    for(int i = 0; i < columns; i++) {
+        max_width_of_col[i] = (int)column_width;
+    }
+
+    //Initialize row heights to zero
+    for(int i = 0; i < rows; i++) {
+        max_height_of_row[i] = 0;
+    }
+
+    QFont base_font("Arial", m_textSize);
+    QFontMetrics base_metrics(base_font);
+
+    int current_row = 0;
+
+    //Process all children (TableHead and TableBody) to calculate row heights
+    for(const Element* table_section : segment.children) {
+        if(table_section->type != DisplayType::block) continue;
+
+        MD_BLOCKTYPE section_type = BLOCKTYPE(table_section);
+
+        //Process each row in this section
+        for(const Element* row : table_section->children) {
+            if(row->type != DisplayType::block || BLOCKTYPE(row) != MD_BLOCK_TR) continue;
+
+            int current_col = 0;
+            int row_max_height = 0;
+
+            //Process each cell in this row
+            for(const Element* cell : row->children) {
+                if(cell->type != DisplayType::block) continue;
+                if(BLOCKTYPE(cell) != MD_BLOCK_TH && BLOCKTYPE(cell) != MD_BLOCK_TD) continue;
+
+                int cell_height = 0;
+
+                //Calculate height of cell content
+                for(const Element* content : cell->children) {
+                    if(content->type == DisplayType::span) {
+                        spantype span_type = SPANTYPE(content);
+
+                        if(span_type == spantype::latex) {
+                            latex_data* latex_data_ptr = (latex_data*)content->data;
+                            if(latex_data_ptr && latex_data_ptr->render) {
+                                cell_height = std::max(cell_height, (int)latex_data_ptr->render->getHeight());
+                            }
+                        }
+                        else if(span_type == spantype::normal || span_type == spantype::code ||
+                               span_type == spantype::bold || span_type == spantype::italic ||
+                               span_type == spantype::italic_bold) {
+                            span_data* text_data = (span_data*)content->data;
+                            if(text_data) {
+                                QFont font = getFont(content);
+                                QFontMetrics metrics(font);
+
+                                //Calculate text wrapping height (matching renderSpan parameters exactly)
+                                //In renderSpan: min_x = cell_start+padding, max_x = cell_start+max_width_of_col[i]+2*padding
+                                //So available width = max_x - min_x = max_width_of_col[i] + padding
+                                int available_width = max_width_of_col[current_col] + padding;
+                                if(available_width <= 0) available_width = 100; //fallback minimum width
+
+                                //Split text into words and calculate wrapped lines (matching renderSpan logic)
+                                QStringList words = text_data->text.split(' ', Qt::SkipEmptyParts);
+                                int lines = 1;
+                                int current_x_sim = 0; //simulate x position like in renderSpan
+                                int cell_start = 0; //simulate min_x
+                                int cell_end = available_width; //simulate max_x
+
+                                for(const QString& word : words) {
+                                    if(word == "\n") {
+                                        current_x_sim = cell_start;
+                                        lines++;
+                                        continue;
+                                    }
+                                    //Calculate word width (matching renderSpan exactly)
+                                    int wordWidth = metrics.horizontalAdvance(word);
+                                    int spaceWidth = metrics.horizontalAdvance(" ");
+                                    int totalWidth = wordWidth + spaceWidth;
+
+                                    //Check if word fits on current line (matching renderSpan logic exactly)
+                                    if(current_x_sim + totalWidth > cell_end) {
+                                        current_x_sim = cell_start;
+                                        lines++;
+                                    }
+                                    current_x_sim += totalWidth;
+                                }
+
+                                int wrapped_height = lines * metrics.lineSpacing();
+                                cell_height = std::max(cell_height, wrapped_height);
+                            }
+                        }
+                    }
+                }
+
+                //Track row max height
+                row_max_height = std::max(row_max_height, cell_height);
+
+                current_col++;
+            }
+
+            //Update row max height
+            if(current_row < rows) {
+                max_height_of_row[current_row] = row_max_height;
+            }
+
+            current_row++;
+        }
+    }
+}
 
 void LatexLabel::renderTable(const Element& segment, qreal& x, qreal& y, qreal min_x, qreal max_x, qreal& lineHeight) {
-    //Convert markdown table to LaTeX table syntax
-    y += lineHeight;
-    QString latexTable;
-    int columnCount = 0;
-    bool hasHeader = false;
+    y+=10;
+    QFontMetrics fm(getFont(&segment));
 
-    //Helper function to extract text content from Element recursively
-    std::function<QString(const Element*)> extractTextContent = [&](const Element* elem) -> QString {
-        QString content;
-        if(elem->type == DisplayType::span && elem->data) {
-            spantype sType = SPANTYPE(elem);
-            switch(sType) {
-                case spantype::normal:
-                case spantype::bold:
-                case spantype::italic:
-                case spantype::italic_bold:
-                case spantype::code:
-                case spantype::strikethrough:
-                case spantype::underline: {
-                    span_data* data = (span_data*)elem->data;
-                    content += data->text;
-                    break;
-                }
-                case spantype::link: {
-                    link_data* data = (link_data*)elem->data;
-                    content += data->title;
-                    break;
-                }
-                case spantype::latex: {
-                    latex_data* data = (latex_data*)elem->data;
-                    content += data->text;
-                    break;
-                }
-                case spantype::linebreak:
-                    content += " ";
-                    break;
-                default:
-                    break;
-            }
-        }
-        for(const Element* child : elem->children) {
-            content += extractTextContent(child);
-        }
-        return content.trimmed();
-    };
+    Element* table_header_row=segment.children[0]->children[0];
+    Element* table_body = segment.children[1];
 
-    //First pass: determine column count and structure
-    for(const Element* child : segment.children) {
-        if(child->type == DisplayType::block) {
-            MD_BLOCKTYPE blockType = BLOCKTYPE(child);
-            if(blockType == MD_BLOCK_THEAD) {
-                hasHeader = true;
-                //Find first row to determine column count
-                for(const Element* headChild : child->children) {
-                    if(headChild->type == DisplayType::block && BLOCKTYPE(headChild) == MD_BLOCK_TR) {
-                        for(const Element* rowChild : headChild->children) {
-                            if(rowChild->type == DisplayType::block && BLOCKTYPE(rowChild) == MD_BLOCK_TH) {
-                                columnCount++;
-                            }
-                        }
-                        break; //only count first row
-                    }
-                }
-            } else if(blockType == MD_BLOCK_TBODY && columnCount == 0) {
-                //fallback: count columns from first data row if no header
-                for(const Element* bodyChild : child->children) {
-                    if(bodyChild->type == DisplayType::block && BLOCKTYPE(bodyChild) == MD_BLOCK_TR) {
-                        for(const Element* rowChild : bodyChild->children) {
-                            if(rowChild->type == DisplayType::block && BLOCKTYPE(rowChild) == MD_BLOCK_TD) {
-                                columnCount++;
-                            }
-                        }
-                        break; //only count first row
-                    }
+    int columns=table_header_row->children.size();
+    int rows = 1+ table_body->children.size();//table head + children of table body
+
+    int max_width_of_col[columns];
+    int max_height_of_row[rows];
+    int padding =5; //to all sides
+
+    //Calculate table dimensions
+    calculate_table_dimensions(segment, max_width_of_col, max_height_of_row, columns, rows, min_x, max_x);
+    //combine table header and table body into one list
+    std::vector<Element*> row_list=table_body->children;
+    row_list.insert(row_list.begin(),table_header_row);
+    //render table
+    for(int i=0;i<row_list.size();i++){
+        Element* row = row_list[i];
+        for (int j=0;j<row->children.size();j++) {
+            Element* cell =row->children[j];
+
+            QRect cell_border =QRect(x,y-fm.ascent()-padding,max_width_of_col[j]+2*padding,max_height_of_row[i]+2*padding);
+            m_display_list.push_back(Fragment(cell_border,cell_border,0));
+            int cell_start_x=x;
+            int cell_start_y=y;
+            x+=padding;
+
+
+            for (Element* e : cell->children) {
+                if(e->type==DisplayType::span){
+                    renderSpan(*e, x, y, cell_start_x+padding, cell_start_x+max_width_of_col[j]+2*padding, lineHeight);
                 }
             }
+            x=cell_start_x+max_width_of_col[j]+2*padding;
+            y=cell_start_y;
         }
+        y+=max_height_of_row[i]+2*padding;
+        x=min_x;
     }
 
-    if(columnCount == 0) {
-        //fallback to simple rendering if table structure can't be determined
-        for(const Element* child : segment.children) {
-            if(child->type == DisplayType::block) {
-                renderBlock(*child, x, y, min_x, max_x, lineHeight);
-            }
-        }
-        return;
-    }
 
-    //Build LaTeX table
-    latexTable = "\\begin{array}{|";
-    for(int i = 0; i < columnCount; i++) {
-        latexTable += "c|";
-    }
-    latexTable += "}\n\\hline\n";
 
-    //process table rows
-    for(const Element* child : segment.children) {
-        if(child->type == DisplayType::block) {
-            MD_BLOCKTYPE blockType = BLOCKTYPE(child);
-            if(blockType == MD_BLOCK_THEAD) {
-                //process header rows
-                for(const Element* headChild : child->children) {
-                    if(headChild->type == DisplayType::block && BLOCKTYPE(headChild) == MD_BLOCK_TR) {
-                        QStringList cellContents;
-                        for(const Element* rowChild : headChild->children) {
-                            if(rowChild->type == DisplayType::block && BLOCKTYPE(rowChild) == MD_BLOCK_TH) {
-                                QString cellText = extractTextContent(rowChild);
-                                if(!cellText.isEmpty()) {
-                                    cellContents.append("\\textbf{" + cellText + "}");
-                                } else {
-                                    cellContents.append("");
-                                }
-                            }
-                        }
-                        if(!cellContents.isEmpty()) {
-                            latexTable += cellContents.join(" & ") + " \\\\\n\\hline\n";
-                        }
-                    }
-                }
-            } else if(blockType == MD_BLOCK_TBODY) {
-                //process data rows
-                for(const Element* bodyChild : child->children) {
-                    if(bodyChild->type == DisplayType::block && BLOCKTYPE(bodyChild) == MD_BLOCK_TR) {
-                        QStringList cellContents;
-                        for(const Element* rowChild : bodyChild->children) {
-                            if(rowChild->type == DisplayType::block && BLOCKTYPE(rowChild) == MD_BLOCK_TD) {
-                                QString cellText = extractTextContent(rowChild);
-                                if(!cellText.isEmpty()) {
-                                    cellContents.append("\\text{" + cellText + "}");
-                                } else {
-                                    cellContents.append("");
-                                }
-                            }
-                        }
-                        if(!cellContents.isEmpty()) {
-                            latexTable += cellContents.join(" & ") + " \\\\\n";
-                        }
-                    }
-                }
-            }
-        }
-    }
 
-    latexTable += "\\hline\n\\end{array}";
-
-    //render the LaTeX table as a display block
-    tex::TeXRender* tableRender = getLatexRenderer(latexTable, false, m_textSize);
-    if(tableRender != nullptr) {
-        qreal renderWidth = tableRender->getWidth();
-        qreal renderHeight = tableRender->getHeight();
-
-        //center the table horizontally
-        qreal tableX = (max_x - min_x) / 2 - renderWidth / 2 + min_x;
-        if(tableX < min_x) tableX = min_x; //minimum left margin
-
-        //add some vertical spacing before the table
-        y += lineHeight;
-
-        //draw the LaTeX table
-        qreal tableY = y - (renderHeight - tableRender->getDepth());
-        m_display_list.push_back(Fragment(QRect(tableX, tableY, renderWidth, renderHeight), tableRender, latexTable, false));
-
-        //update position after table
-        x = min_x; //reset to left margin
-        y += renderHeight + lineHeight; //add spacing after table
-    } else {
-        //fallback to simple rendering if LaTeX parsing fails
-        for(const Element* child : segment.children) {
-            if(child->type == DisplayType::block) {
-                renderBlock(*child, x, y, min_x, max_x, lineHeight);
-            }
-        }
-    }
 }
 
 void LatexLabel::paintEvent(QPaintEvent* event){
