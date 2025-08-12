@@ -134,14 +134,19 @@ file(GLOB_RECURSE MICROTEX_HEADERS "${microtex_SOURCE_DIR}/src/*.h")
 # Remove sample/example headers that might contain Q_OBJECT
 list(FILTER MICROTEX_HEADERS EXCLUDE REGEX ".*samples.*")
 
-# Application headers (not part of the library)
+# Application headers and sources
 set(APPLICATION_HEADERS
     include/LatexLabel.h
     include/element.h
 )
 
+set(APPLICATION_SOURCES
+    src/LatexLabel.cpp
+    src/element.cpp
+)
+
 # Create the library target
-add_library(latex-label ${LatexSources} ${MICROTEX_HEADERS})
+add_library(latex-label ${LatexSources} ${MICROTEX_HEADERS} ${APPLICATION_HEADERS} ${APPLICATION_SOURCES})
 
 # Set library properties
 set_target_properties(latex-label PROPERTIES
@@ -193,10 +198,10 @@ endif()
 
 # Build examples if requested
 if(BUILD_EXAMPLES)
-    file(GLOB_RECURSE EXAMPLE_SOURCES "src/*.cpp")
+    set(EXAMPLE_SOURCES src/main.cpp)
 
-    if(EXAMPLE_SOURCES)
-        add_executable(latex-label-example ${EXAMPLE_SOURCES} ${APPLICATION_HEADERS})
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
+        add_executable(latex-label-example ${EXAMPLE_SOURCES})
 
         # Link the example to our library
         target_link_libraries(latex-label-example PRIVATE latex-label)
@@ -217,5 +222,3 @@ if(BUILD_EXAMPLES)
         endif()
     endif()
 endif()
-
-
