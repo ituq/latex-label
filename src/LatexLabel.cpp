@@ -736,7 +736,7 @@ void LatexLabel::renderSpan(const Element& segment, qreal& x, qreal& y, qreal mi
             x = min_x;
             y += metrics.lineSpacing();
         }
-        m_display_list.push_back(Fragment(QRect(x,y-metrics.ascent(),wordWidth,metrics.height()),word,font));
+        m_display_list.push_back(Fragment(QRect(x,y-metrics.ascent(),wordWidth+1,metrics.height()),word,font));
         x += totalWidth;
     }
 }
@@ -1149,6 +1149,7 @@ void LatexLabel::renderTable(const Element& segment, qreal& x, qreal& y, qreal m
 
 void LatexLabel::paintEvent(QPaintEvent* event){
     QRect area=event->rect();
+
     /*
     //timing variables
     clock_t start = clock();
