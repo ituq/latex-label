@@ -692,7 +692,7 @@ void LatexLabel::renderSpan(const Element& segment, qreal& x, qreal& y, qreal mi
 
         }
         else if(!data->isInline){
-            y += renderHeight;
+            y += 2*metrics.height();
             x=(max_x-min_x)/2-renderWidth/2;
         }
 
@@ -703,12 +703,13 @@ void LatexLabel::renderSpan(const Element& segment, qreal& x, qreal& y, qreal mi
         m_display_list.push_back(Fragment(QRect(x,latexY,width,height),data->render,data->text,data->isInline));
 
 
+
         if(data->isInline){
             x += renderWidth + metrics.horizontalAdvance(" ");
         }
         else{
             x = min_x;
-            y += renderHeight;
+            y += renderHeight+metrics.height();
         }
 
         return;
