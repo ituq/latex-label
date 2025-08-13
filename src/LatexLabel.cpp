@@ -11,6 +11,7 @@
 #include <QPaintEvent>
 #include <QMouseEvent>
 #include <QResizeEvent>
+#include <QEvent>
 #include <md4c.h>
 #include <vector>
 
@@ -46,7 +47,7 @@ int LatexLabel::getTextSize() const {
     return m_textSize;
 }
 
-tex::TeXRender* getLatexRenderer(const QString& latex, bool isInline, int text_size) {
+tex::TeXRender* getLatexRenderer(const QString& latex, bool isInline, int text_size, QRgb argb_color) {
     try {
         tex::Formula formula;
         formula.setLaTeX(latex.toStdWString());
@@ -62,7 +63,7 @@ tex::TeXRender* getLatexRenderer(const QString& latex, bool isInline, int text_s
             .setWidth(tex::UnitType::pixel, width, alignment)
             .setIsMaxWidth(true)
             .setLineSpace(tex::UnitType::point, linespace)
-            .setForeground(0xff424242)
+            .setForeground(argb_color)
             .build(formula._root);
 
         return render;
@@ -446,7 +447,8 @@ int LatexLabel::textCallback(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size
         case MD_TEXT_LATEXMATH:
             {
             latex_data* data_latex = (latex_data*)parent_span->data;
-            data_latex->render=getLatexRenderer(textStr, data_latex->isInline,state->textSize);
+            QRgb argb_color = label->palette().text().color().rgba();
+            data_latex->render=getLatexRenderer(textStr, data_latex->isInline, state->textSize, argb_color);
             data_latex->text=textStr;
             }
             break;
@@ -981,6 +983,7 @@ QString column_string(int n){
     for (int i=0; i<n; i++) {
         res+="c|";
     }
+    return res;
 }
 
 void LatexLabel::calculate_table_dimensions(const Element& segment, int* max_width_of_col, int* max_height_of_row, int columns, int rows, qreal min_x, qreal max_x) {
@@ -1161,7 +1164,7 @@ void LatexLabel::paintEvent(QPaintEvent* event){
      */
 
     QPainter painter(this);
-    painter.fillRect(rect(), QColor(255, 255, 255)); // White background
+    painter.fillRect(rect(), m_pallete.base()); // White background
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setPen(Qt::black);
 
@@ -1181,6 +1184,7 @@ void LatexLabel::paintEvent(QPaintEvent* event){
             case fragment_type::latex:{
                 frag_latex_data* data = (frag_latex_data*) f.data;
                 painter.save();
+                painter.setBrush(m_pallete.text());
 
                 tex::Graphics2D_qt g2(&painter);
                 data->render->draw(g2, f.bounding_box.x(), f.bounding_box.y());
@@ -1190,7 +1194,7 @@ void LatexLabel::paintEvent(QPaintEvent* event){
             case fragment_type::line:{
                 painter.save();
                 frag_line_data* data = (frag_line_data*) f.data;
-                painter.setPen(QPen(Qt::gray, data->width));
+                painter.setPen(QPen(m_pallete.light(), data->width));
 
                 painter.drawLine(QPoint(f.bounding_box.x(),f.bounding_box.y()),data->to);
                 painter.restore();
@@ -1204,6 +1208,7 @@ void LatexLabel::paintEvent(QPaintEvent* event){
             case fragment_type::text:{
                 frag_text_data* data = (frag_text_data*) f.data;
                 painter.setFont(data->font);
+                painter.setPen(m_pallete.text().color());
                 painter.drawText(f.bounding_box,data->text);
                 break;
             }
@@ -1233,6 +1238,26 @@ void LatexLabel::paintEvent(QPaintEvent* event){
 
      */
 
+}
+
+void LatexLabel::changeEvent(QEvent* event) {
+    if(event->type() == QEvent::ApplicationPaletteChange || event->type() == QEvent::PaletteChange) {
+        m_pallete = QGuiApplication::palette();
+
+        //Update color for all latex fragments
+        QRgb argb_color = palette().text().color().rgba();
+        for(Fragment& f : m_display_list){
+            if(f.type != fragment_type::latex) continue;
+            frag_latex_data* data = (frag_latex_data*) f.data;
+            if(data && data->render){
+                //Update foreground color of the existing renderer
+                data->render->setForeground(static_cast<tex::color>(argb_color));
+            }
+        }
+
+        update();
+    }
+    QWidget::changeEvent(event);
 }
 
 void LatexLabel::resizeEvent(QResizeEvent* event) {

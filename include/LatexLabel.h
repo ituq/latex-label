@@ -253,7 +253,7 @@ struct MarkdownParserState {
 
     MarkdownParserState(int size) : textSize(size), list_nesting_level(0) {}
 };
-tex::TeXRender* getLatexRenderer(const QString& latex, bool isInline);
+tex::TeXRender* getLatexRenderer(const QString& latex, bool isInline, int text_size, QRgb argb_color);
 
 
 class LatexLabel : public QWidget{
@@ -325,6 +325,7 @@ private:
 
 protected:
     void paintEvent(QPaintEvent* event) override;
+    void changeEvent(QEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
