@@ -1105,12 +1105,16 @@ void LatexLabel::calculate_table_dimensions(const Element& segment, int* max_wid
 void LatexLabel::renderTable(const Element& segment, qreal& x, qreal& y, qreal min_x, qreal max_x, qreal& lineHeight) {
     y+=10;
     QFontMetrics fm(getFont(&segment));
+    bool header_only=segment.children.size()==1;
 
     Element* table_header_row=segment.children[0]->children[0];
     Element* table_body = segment.children[1];
 
     int columns=table_header_row->children.size();
-    int rows = 1+ table_body->children.size();//table head + children of table body
+    int rows = 1;
+    if(!header_only){
+        rows+=table_body->children.size();//table head + children of table body
+    }
 
     int max_width_of_col[columns];
     int max_height_of_row[rows];
@@ -1119,8 +1123,15 @@ void LatexLabel::renderTable(const Element& segment, qreal& x, qreal& y, qreal m
     //Calculate table dimensions
     calculate_table_dimensions(segment, max_width_of_col, max_height_of_row, columns, rows, min_x, max_x);
     //combine table header and table body into one list
-    std::vector<Element*> row_list=table_body->children;
-    row_list.insert(row_list.begin(),table_header_row);
+    std::vector<Element*> row_list;
+    if(header_only){
+        row_list.push_back(table_header_row);
+    }
+    else{
+        row_list=table_body->children;
+        row_list.insert(row_list.begin(),table_header_row);
+    }
+
     //render table
     for(int i=0;i<row_list.size();i++){
         Element* row = row_list[i];
@@ -1145,9 +1156,6 @@ void LatexLabel::renderTable(const Element& segment, qreal& x, qreal& y, qreal m
         y+=max_height_of_row[i]+2*padding;
         x=min_x;
     }
-
-
-
 
 }
 
