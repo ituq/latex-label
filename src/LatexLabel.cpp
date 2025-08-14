@@ -51,7 +51,7 @@ tex::TeXRender* getLatexRenderer(const QString& latex, bool isInline, int text_s
     try {
         tex::Formula formula;
         formula.setLaTeX(latex.toStdWString());
-        float width = isInline ? 280 : 600;
+        float width = 600;
         tex::Alignment alignment= isInline ? tex::Alignment::left : tex::Alignment::center;
         float linespace = isInline ? text_size : text_size + 2;
         tex::TexStyle style = isInline ? tex::TexStyle::text : tex::TexStyle::display;
@@ -709,7 +709,7 @@ void LatexLabel::renderSpan(const Element& segment, qreal& x, qreal& y, qreal mi
         }
         else{
             x = min_x;
-            y += renderHeight+metrics.height();
+            y += (renderHeight/2)+metrics.height();
         }
 
         return;
@@ -1165,14 +1165,14 @@ void LatexLabel::paintEvent(QPaintEvent* event){
      */
 
     QPainter painter(this);
-    painter.fillRect(rect(), m_pallete.base()); // White background
+    painter.fillRect(rect(), m_pallete.window()); // White background
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setPen(Qt::black);
 
 
 
     for(Fragment& f: m_display_list){
-        if(!area.contains(f.bounding_box)) continue;
+        if(!area.intersects(f.bounding_box)) continue;
         if(f.is_highlighted){
             painter.save();
             painter.setPen(Qt::NoPen);
@@ -1195,7 +1195,7 @@ void LatexLabel::paintEvent(QPaintEvent* event){
             case fragment_type::line:{
                 painter.save();
                 frag_line_data* data = (frag_line_data*) f.data;
-                painter.setPen(QPen(m_pallete.light(), data->width));
+                painter.setPen(QPen(m_pallete.mid(), data->width));
 
                 painter.drawLine(QPoint(f.bounding_box.x(),f.bounding_box.y()),data->to);
                 painter.restore();
