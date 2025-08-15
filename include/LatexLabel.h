@@ -6,6 +6,9 @@
 #include <QClipboard>
 #include <QKeyEvent>
 #include <QFocusEvent>
+#include <QLabel>
+#include <QScrollArea>
+#include <QToolButton>
 #include <iostream>
 
 #include <md4c.h>
@@ -80,12 +83,12 @@ typedef struct Fragment{
     Fragment(QRect bounding_box, tex::TeXRender* render, QString text, bool isInline): bounding_box(bounding_box),is_highlighted(false), type(fragment_type::latex){
         data = new frag_latex_data(render,text,isInline);
     }
-    
+
     //Stream operator for easy printing with QDebug
     friend QDebug operator<<(QDebug debug, const Fragment& fragment) {
         QString result = QString("Fragment{");
         result += QString("type: ");
-        
+
         switch(fragment.type) {
             case fragment_type::text:
                 result += "text";
@@ -100,15 +103,15 @@ typedef struct Fragment{
                 result += "rounded_rect";
                 break;
         }
-        
+
         result += QString(", bounding_box: (%1,%2,%3,%4)")
                     .arg(fragment.bounding_box.x())
                     .arg(fragment.bounding_box.y())
                     .arg(fragment.bounding_box.width())
                     .arg(fragment.bounding_box.height());
-        
+
         result += QString(", highlighted: %1").arg(fragment.is_highlighted ? "true" : "false");
-        
+
         //Add type-specific data
         switch(fragment.type) {
             case fragment_type::text: {
@@ -154,7 +157,7 @@ typedef struct Fragment{
                 break;
             }
         }
-        
+
         result += "}";
         debug.noquote() << result;
         return debug;
@@ -165,7 +168,7 @@ typedef struct Fragment{
 inline std::ostream& operator<<(std::ostream& os, const Fragment& fragment) {
     QString result = QString("Fragment{");
     result += QString("type: ");
-    
+
     switch(fragment.type) {
         case fragment_type::text:
             result += "text";
@@ -180,15 +183,15 @@ inline std::ostream& operator<<(std::ostream& os, const Fragment& fragment) {
             result += "rounded_rect";
             break;
     }
-    
+
     result += QString(", bounding_box: (%1,%2,%3,%4)")
                 .arg(fragment.bounding_box.x())
                 .arg(fragment.bounding_box.y())
                 .arg(fragment.bounding_box.width())
                 .arg(fragment.bounding_box.height());
-    
+
     result += QString(", highlighted: %1").arg(fragment.is_highlighted ? "true" : "false");
-    
+
     //Add type-specific data
     switch(fragment.type) {
         case fragment_type::text: {
@@ -234,7 +237,7 @@ inline std::ostream& operator<<(std::ostream& os, const Fragment& fragment) {
             break;
         }
     }
-    
+
     result += "}";
     os << result.toStdString();
     return os;
@@ -287,13 +290,25 @@ private:
     bool m_is_dragging=false;
     Fragment* m_selected=nullptr;
 
+    int margin_left=5, margin_right=5,margin_top=5,margin_bottom=5;
+
+    //Widgets for rendering code blocks with copy & horizontal scroll
+    struct code_block_widget_info{
+        QLabel* label;
+        QScrollArea* scroll_area;
+        QToolButton* copy_button;
+        QRect rect;
+        QString text;
+    };
+    std::vector<code_block_widget_info> m_code_widgets;
+
     //void parseText();
     void parseMarkdown(const QString& text);
 
     // Markdown rendering helpers
     void renderBlock(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
     void renderSpan(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal lineHeight, QFont* font_passed=nullptr);
-    void renderListElement(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
+    void renderListElement(const Element& segment, qreal& x, qreal& y, int min_x,int max_x, qreal& lineHeight);
     void renderHeading(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
     void renderCodeBlock(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
     void renderBlockquote(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight);
@@ -322,6 +337,10 @@ private:
     // Cleanup methods for AST elements
     void cleanup_segments(std::vector<Element*>& elements);  // free all pointers in AST
     void deleteDisplayList();
+
+    //Helpers for managing embedded code block widgets
+    void clear_code_block_widgets();
+    void create_code_block_widget(const QRect& rect, const QString& text, const QFont& font);
 
 protected:
     void paintEvent(QPaintEvent* event) override;

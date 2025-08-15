@@ -12,6 +12,8 @@
 #include <QMouseEvent>
 #include <QResizeEvent>
 #include <QEvent>
+#include <QTextOption>
+#include <QFrame>
 #include <md4c.h>
 #include <vector>
 
@@ -28,6 +30,7 @@ LatexLabel::LatexLabel(QWidget* parent) : QWidget(parent), _render(nullptr), m_t
 
 LatexLabel::~LatexLabel(){
     //Clean up all segments and their children
+    clear_code_block_widgets();
     cleanup_segments(m_segments);
 }
 QSize LatexLabel::sizeHint() const{
@@ -480,6 +483,7 @@ void LatexLabel::cleanup_segments(std::vector<Element*>& segments) {
 
 void LatexLabel::parseMarkdown(const QString& text) {
     //Clean up previous segments
+    clear_code_block_widgets();
     cleanup_segments(m_segments);
 
     // Set up parser state
@@ -513,9 +517,9 @@ void LatexLabel::parseMarkdown(const QString& text) {
         //populate m_display_list
 
         QFontMetricsF fontMetrics = QFontMetricsF(getFont(font_type::normal));
-        qreal lineHeight = fontMetrics.height() * 1.2;
-        qreal x = 5.0;
-        qreal y = 5.0 + fontMetrics.ascent();  // y represents the text baseline
+        qreal lineHeight = fontMetrics.lineSpacing();
+        qreal x = margin_left;
+        qreal y = margin_top + fontMetrics.ascent();  // y represents the text baseline
         qreal maxWidth = width() - 10.0;
 
         for(const Element* segment : m_segments) {
@@ -527,7 +531,7 @@ void LatexLabel::parseMarkdown(const QString& text) {
             }
 
         }
-        widget_height=y+50.0; // Add some padding at the bottom
+        widget_height=y;
         setMinimumHeight(widget_height);
         updateGeometry();
     } else {
@@ -807,7 +811,7 @@ void LatexLabel::renderBlock(const Element& segment, qreal& x, qreal& y, qreal m
     }
 }
 
-void LatexLabel::renderListElement(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight) {
+void LatexLabel::renderListElement(const Element& segment, qreal& x, qreal& y, int min_x,int max_x, qreal& lineHeight) {
 
     MD_BLOCKTYPE type =*(MD_BLOCKTYPE*)segment.subtype;
 
@@ -842,19 +846,25 @@ void LatexLabel::renderListElement(const Element& segment, qreal& x, qreal& y, q
 
         // Render list item content
         QFont listFont("Arial", m_textSize);
+        bool last_rendered_is_list=false;
         for(const Element* child : segment.children) {
+            last_rendered_is_list=false;
             if(child->type==DisplayType::span) {
                 renderSpan(*child, x, y, left_border,max_x, lineHeight);
             }
             else{
+                last_rendered_is_list=BLOCKTYPE(child)==MD_BLOCK_UL||BLOCKTYPE(child)==MD_BLOCK_OL;
                 if(x>left_border){
                     x=left_border;
-                    y+=lineHeight*1.3;
+                    y+=lineHeight;
                 }
                 renderBlock(*child, x, y, left_border,max_x, lineHeight);
             }
         }
-        y += lineHeight * 1.3;
+        if(!last_rendered_is_list){
+            //don't add padding after list if we're not in nested list
+            y += lineHeight * 1.1;
+        }
         x = min_x;
     } else {
         // List container - render children
@@ -863,7 +873,6 @@ void LatexLabel::renderListElement(const Element& segment, qreal& x, qreal& y, q
                 renderBlock(*child, x, y, min_x,max_x, lineHeight);
             }
         }
-        // Add spacing after the entire list
         x=min_x;
     }
 }
@@ -896,54 +905,29 @@ void LatexLabel::renderHeading(const Element& segment, qreal& x, qreal& y, qreal
 
 void LatexLabel::renderCodeBlock(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight) {
 
-
-    // Set code font
+    //Set code font and assemble full text
     QFont font = getFont(&segment);
-    QFontMetrics fm(font);
-
-    y += 10.0;
-    double startY = y;
-
-    // Count lines for height calculation
-    int lineCount = 1; // Start with 1 line
-    for(const Element* child : segment.children) {
-        if(child->type==DisplayType::span && SPANTYPE(child)== spantype::code) {
-            QString text = ((span_data*)child->data)->text;
-            if(text == "\n") {
-                lineCount++;
-            }
-        }
-    }
-
-    // Measure total height first
-    qreal tempY = y + lineCount * fm.lineSpacing();
-
-    // Draw background first
-    m_display_list.push_back(Fragment(QRect(min_x, y-2*fm.ascent(), max_x - 10, tempY - startY),QRect(min_x, y-fm.ascent(), max_x - 10, tempY - startY),10));
-
-    x+=10;
-    y+=10;
-
-    // Draw text using existing span structure
+    QString full_text;
     for(const Element* child : segment.children) {
         if(child->type == DisplayType::span && SPANTYPE(child) == spantype::code) {
-            QString text = ((span_data*)child->data)->text;
-            if(text == "\n") {
-                // Move to next line
-                x = min_x + 10;
-                y += fm.lineSpacing();
-            } else {
-                // Draw the text chunk
-                int chunk_width=fm.horizontalAdvance(text);
-                m_display_list.push_back(Fragment(QRect(x,y-fm.ascent(),chunk_width,fm.height()),text,font));
-                x += chunk_width;
-            }
+            QString chunk = ((span_data*)child->data)->text;
+            full_text += chunk;
         }
     }
 
-    y += fm.lineSpacing(); // Bottom margin
-    x = 5.0;
+    //Estimate widget rect
+    QFontMetrics fm(font);
+    int line_height = fm.lineSpacing();
+    int line_count = full_text.count('\n') + 1;
+    int content_height = std::max(line_height * line_count + 16, line_height + 16);
+    QRect block_rect((int)min_x, (int)(y - fm.ascent()), (int)(max_x - 10), content_height);
 
+    //Create embedded code widget with horizontal scrolling and copy button
+    create_code_block_widget(block_rect, full_text, font);
+
+    //Advance layout positions
+    y += content_height;
+    x = 5.0;
 }
 
 void LatexLabel::renderBlockquote(const Element& segment, qreal& x, qreal& y, qreal min_x, qreal max_x, qreal& lineHeight) {
@@ -1264,6 +1248,14 @@ void LatexLabel::changeEvent(QEvent* event) {
             }
         }
 
+        //Update code block widgets background to match palette changes
+        const QString code_bg = QString("QLabel { background-color: %1; }").arg(m_pallete.dark().color().name());
+        for(auto& info : m_code_widgets){
+            if(info.label){
+                info.label->setStyleSheet(code_bg);
+            }
+        }
+
         update();
     }
     QWidget::changeEvent(event);
@@ -1275,6 +1267,7 @@ void LatexLabel::resizeEvent(QResizeEvent* event) {
 
     if(!m_text.isEmpty() && event->oldSize().width() != event->size().width()) {
         deleteDisplayList();
+        clear_code_block_widgets();
         parseMarkdown(m_text);//this is expensive, need to find way to avoid without dangling latex pointers in m_segments
         update();
     }
@@ -1331,6 +1324,7 @@ void LatexLabel::deleteDisplayList(){
 void LatexLabel::setText(QString text){
     m_raw_text.clear();
     deleteDisplayList();
+    clear_code_block_widgets();
     m_display_list.clear();
     m_text = text;
     clock_t start = clock();
@@ -1344,6 +1338,68 @@ void LatexLabel::setText(QString text){
 
     update();
     adjustSize();
+}
+
+void LatexLabel::clear_code_block_widgets(){
+    for(auto& info : m_code_widgets){
+        if(info.copy_button){ info.copy_button->deleteLater(); }
+        if(info.scroll_area){ info.scroll_area->deleteLater(); }
+        if(info.label){ info.label->deleteLater(); }
+    }
+    m_code_widgets.clear();
+}
+
+void LatexLabel::create_code_block_widget(const QRect& rect, const QString& text, const QFont& font){
+    code_block_widget_info info;
+    info.rect = rect;
+    info.text = text;
+
+    info.label = new QLabel(this);
+    info.label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    info.label->setFont(font);
+    info.label->setTextFormat(Qt::PlainText);
+    info.label->setText(text);
+    info.label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    QString styleSheet = QString(R"(
+        QLabel {
+            background-color: %1;
+        }
+    )")
+    .arg(m_pallete.dark().color().name());
+    info.label->setStyleSheet(styleSheet);
+
+    info.scroll_area = new QScrollArea(this);
+    info.scroll_area->setWidgetResizable(false);
+    info.scroll_area->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    info.scroll_area->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    info.scroll_area->setFrameShape(QFrame::NoFrame);
+    info.scroll_area->setWidget(info.label);
+
+    QFontMetrics fm(font);
+    int max_line_width = 0;
+    int lines = 0;
+    for(const QString& line : text.split('\n')){
+        max_line_width = std::max(max_line_width, fm.horizontalAdvance(line));
+        lines++;
+    }
+    int line_height = fm.lineSpacing();
+    int total_height = std::max(line_height * std::max(1, lines) + 8, line_height + 8);
+
+    info.scroll_area->setGeometry(rect.adjusted(8, 8, -60, -8));
+    info.label->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Expanding);
+
+    info.copy_button = new QToolButton(this);
+    info.copy_button->setText("Copy");
+    info.copy_button->setCursor(Qt::PointingHandCursor);
+    QRect btn_rect(rect.right() - 52, rect.top() + 8, 44, 24);
+    info.copy_button->setGeometry(btn_rect);
+    QObject::connect(info.copy_button, &QToolButton::clicked, this, [text](){
+        QGuiApplication::clipboard()->setText(text);
+    });
+
+    info.scroll_area->show();
+    info.copy_button->show();
+    m_code_widgets.push_back(info);
 }
 
 void LatexLabel::printSegmentsStructure() const {

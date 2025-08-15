@@ -201,14 +201,14 @@ if(BUILD_EXAMPLES)
     set(EXAMPLE_SOURCES src/main.cpp)
 
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
-        add_executable(latex-label-example ${EXAMPLE_SOURCES})
+        add_executable(test ${EXAMPLE_SOURCES})
 
         # Link the example to our library
-        target_link_libraries(latex-label-example PRIVATE latex-label)
+        target_link_libraries(test PRIVATE latex-label)
 
         # Configure macOS app bundle for Release builds
         if(APPLE AND CMAKE_BUILD_TYPE STREQUAL "Release")
-            set_target_properties(latex-label-example PROPERTIES
+            set_target_properties(test PROPERTIES
                 MACOSX_BUNDLE TRUE
                 MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/Info.plist
                 MACOSX_BUNDLE_BUNDLE_NAME "LatexLabelExample"
@@ -217,8 +217,8 @@ if(BUILD_EXAMPLES)
 
         # Apply sanitizers to example too
         if(SANITIZE)
-            target_compile_options(latex-label-example PRIVATE ${SAN_FLAGS} -O1)
-            target_link_options(latex-label-example PRIVATE ${SAN_FLAGS})
+            target_compile_options(test PRIVATE ${SAN_FLAGS} -O1)
+        target_link_options(test PRIVATE ${SAN_FLAGS})
         endif()
     endif()
 endif()
