@@ -922,8 +922,10 @@ void LatexLabel::renderCodeBlock(const Element& segment, qreal& x, qreal& y, qre
     int content_height = std::max(line_height * line_count + 16, line_height + 16);
     QRect block_rect((int)min_x, (int)(y - fm.ascent()), (int)(max_x - 10), content_height);
 
+    QString language = ((code_block_data*) segment.data)->language;
+
     //Create embedded code widget with horizontal scrolling and copy button
-    create_code_block_widget(block_rect, full_text, font);
+    create_code_block_widget(block_rect, full_text, font, language);
 
     //Advance layout positions
     y += content_height;
@@ -1010,64 +1012,79 @@ void LatexLabel::calculate_table_dimensions(const Element& segment, int* max_wid
                 if(cell->type != DisplayType::block) continue;
                 if(BLOCKTYPE(cell) != MD_BLOCK_TH && BLOCKTYPE(cell) != MD_BLOCK_TD) continue;
 
+                //Compute height by simulating wrapping across all spans in order
+                int available_width = max_width_of_col[current_col] + padding;
+                if(available_width <= 0) available_width = 100;
+
+                int current_x_sim = 0;
+                int current_line_height = 0;
                 int cell_height = 0;
 
-                //Calculate height of cell content
                 for(const Element* content : cell->children) {
-                    if(content->type == DisplayType::span) {
-                        spantype span_type = SPANTYPE(content);
+                    if(content->type != DisplayType::span) continue;
 
-                        if(span_type == spantype::latex) {
-                            latex_data* latex_data_ptr = (latex_data*)content->data;
-                            if(latex_data_ptr && latex_data_ptr->render) {
-                                cell_height = std::max(cell_height, (int)latex_data_ptr->render->getHeight());
+                    spantype span_type = SPANTYPE(content);
+
+                    if(span_type == spantype::latex) {
+                        latex_data* latex_ptr = (latex_data*)content->data;
+                        if(latex_ptr && latex_ptr->render) {
+                            int latex_width = (int)latex_ptr->render->getWidth();
+                            int latex_height = (int)latex_ptr->render->getHeight();
+
+                            //Use base font for space width when advancing after inline latex
+                            QFont base_font("Arial", m_textSize);
+                            QFontMetrics base_metrics(base_font);
+                            int space_width = base_metrics.horizontalAdvance(" ");
+
+                            if(current_x_sim + latex_width > available_width) {
+                                cell_height += current_line_height > 0 ? current_line_height : base_metrics.lineSpacing();
+                                current_x_sim = 0;
+                                current_line_height = 0;
                             }
+
+                            current_x_sim += latex_width + space_width;
+                            if(latex_height > current_line_height) current_line_height = latex_height;
                         }
-                        else if(span_type == spantype::normal || span_type == spantype::code ||
-                               span_type == spantype::bold || span_type == spantype::italic ||
-                               span_type == spantype::italic_bold) {
-                            span_data* text_data = (span_data*)content->data;
-                            if(text_data) {
-                                QFont font = getFont(content);
-                                QFontMetrics metrics(font);
+                        continue;
+                    }
 
-                                //Calculate text wrapping height (matching renderSpan parameters exactly)
-                                //In renderSpan: min_x = cell_start+padding, max_x = cell_start+max_width_of_col[i]+2*padding
-                                //So available width = max_x - min_x = max_width_of_col[i] + padding
-                                int available_width = max_width_of_col[current_col] + padding;
-                                if(available_width <= 0) available_width = 100; //fallback minimum width
+                    if(span_type == spantype::normal || span_type == spantype::code ||
+                       span_type == spantype::bold || span_type == spantype::italic ||
+                       span_type == spantype::italic_bold || span_type == spantype::underline ||
+                       span_type == spantype::link || span_type == spantype::strikethrough) {
+                        span_data* text_data = (span_data*)content->data;
+                        if(!text_data) continue;
 
-                                //Split text into words and calculate wrapped lines (matching renderSpan logic)
-                                QStringList words = text_data->text.split(' ', Qt::SkipEmptyParts);
-                                int lines = 1;
-                                int current_x_sim = 0; //simulate x position like in renderSpan
-                                int cell_start = 0; //simulate min_x
-                                int cell_end = available_width; //simulate max_x
+                        QFont font = getFont(content);
+                        QFontMetrics metrics(font);
+                        QStringList words = text_data->text.split(' ', Qt::SkipEmptyParts);
 
-                                for(const QString& word : words) {
-                                    if(word == "\n") {
-                                        current_x_sim = cell_start;
-                                        lines++;
-                                        continue;
-                                    }
-                                    //Calculate word width (matching renderSpan exactly)
-                                    int wordWidth = metrics.horizontalAdvance(word);
-                                    int spaceWidth = metrics.horizontalAdvance(" ");
-                                    int totalWidth = wordWidth + spaceWidth;
-
-                                    //Check if word fits on current line (matching renderSpan logic exactly)
-                                    if(current_x_sim + totalWidth > cell_end) {
-                                        current_x_sim = cell_start;
-                                        lines++;
-                                    }
-                                    current_x_sim += totalWidth;
-                                }
-
-                                int wrapped_height = lines * metrics.lineSpacing();
-                                cell_height = std::max(cell_height, wrapped_height);
+                        for(const QString& word : words) {
+                            if(word == "\n") {
+                                cell_height += current_line_height > 0 ? current_line_height : metrics.lineSpacing();
+                                current_x_sim = 0;
+                                current_line_height = 0;
+                                continue;
                             }
+
+                            int word_width = metrics.horizontalAdvance(word);
+                            int space_width = metrics.horizontalAdvance(" ");
+                            int total_width = word_width + space_width;
+
+                            if(current_x_sim + total_width > available_width) {
+                                cell_height += current_line_height > 0 ? current_line_height : metrics.lineSpacing();
+                                current_x_sim = 0;
+                                current_line_height = 0;
+                            }
+
+                            current_x_sim += total_width;
+                            if(metrics.lineSpacing() > current_line_height) current_line_height = metrics.lineSpacing();
                         }
                     }
+                }
+
+                if(current_line_height > 0) {
+                    cell_height += current_line_height;
                 }
 
                 //Track row max height
@@ -1248,14 +1265,6 @@ void LatexLabel::changeEvent(QEvent* event) {
             }
         }
 
-        //Update code block widgets background to match palette changes
-        const QString code_bg = QString("QLabel { background-color: %1; }").arg(m_pallete.dark().color().name());
-        for(auto& info : m_code_widgets){
-            if(info.label){
-                info.label->setStyleSheet(code_bg);
-            }
-        }
-
         update();
     }
     QWidget::changeEvent(event);
@@ -1341,65 +1350,18 @@ void LatexLabel::setText(QString text){
 }
 
 void LatexLabel::clear_code_block_widgets(){
-    for(auto& info : m_code_widgets){
-        if(info.copy_button){ info.copy_button->deleteLater(); }
-        if(info.scroll_area){ info.scroll_area->deleteLater(); }
-        if(info.label){ info.label->deleteLater(); }
+    for(auto* widget : m_code_widgets){
+        if(widget){ widget->deleteLater(); }
     }
     m_code_widgets.clear();
 }
 
-void LatexLabel::create_code_block_widget(const QRect& rect, const QString& text, const QFont& font){
-    code_block_widget_info info;
-    info.rect = rect;
-    info.text = text;
+void LatexLabel::create_code_block_widget(const QRect& rect, const QString& text, const QFont& font, const QString& language){
+    CodeBlockWidget* widget = new CodeBlockWidget(text,m_textSize, language, this);
+    widget->setGeometry(rect.adjusted(8, 8, -8, -8));
+    widget->show();
 
-    info.label = new QLabel(this);
-    info.label->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    info.label->setFont(font);
-    info.label->setTextFormat(Qt::PlainText);
-    info.label->setText(text);
-    info.label->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-    QString styleSheet = QString(R"(
-        QLabel {
-            background-color: %1;
-        }
-    )")
-    .arg(m_pallete.dark().color().name());
-    info.label->setStyleSheet(styleSheet);
-
-    info.scroll_area = new QScrollArea(this);
-    info.scroll_area->setWidgetResizable(false);
-    info.scroll_area->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    info.scroll_area->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    info.scroll_area->setFrameShape(QFrame::NoFrame);
-    info.scroll_area->setWidget(info.label);
-
-    QFontMetrics fm(font);
-    int max_line_width = 0;
-    int lines = 0;
-    for(const QString& line : text.split('\n')){
-        max_line_width = std::max(max_line_width, fm.horizontalAdvance(line));
-        lines++;
-    }
-    int line_height = fm.lineSpacing();
-    int total_height = std::max(line_height * std::max(1, lines) + 8, line_height + 8);
-
-    info.scroll_area->setGeometry(rect.adjusted(8, 8, -60, -8));
-    info.label->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Expanding);
-
-    info.copy_button = new QToolButton(this);
-    info.copy_button->setText("Copy");
-    info.copy_button->setCursor(Qt::PointingHandCursor);
-    QRect btn_rect(rect.right() - 52, rect.top() + 8, 44, 24);
-    info.copy_button->setGeometry(btn_rect);
-    QObject::connect(info.copy_button, &QToolButton::clicked, this, [text](){
-        QGuiApplication::clipboard()->setText(text);
-    });
-
-    info.scroll_area->show();
-    info.copy_button->show();
-    m_code_widgets.push_back(info);
+    m_code_widgets.push_back(widget);
 }
 
 void LatexLabel::printSegmentsStructure() const {

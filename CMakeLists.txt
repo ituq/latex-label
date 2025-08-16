@@ -138,11 +138,13 @@ list(FILTER MICROTEX_HEADERS EXCLUDE REGEX ".*samples.*")
 set(APPLICATION_HEADERS
     include/LatexLabel.h
     include/element.h
+    include/CodeBlockWidget.h
 )
 
 set(APPLICATION_SOURCES
     src/LatexLabel.cpp
     src/element.cpp
+    src/CodeBlockWidget.cpp
 )
 
 # Create the library target

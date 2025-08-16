@@ -10,6 +10,7 @@
 #include <QScrollArea>
 #include <QToolButton>
 #include <iostream>
+#include "CodeBlockWidget.h"
 
 #include <md4c.h>
 #include <vector>
@@ -292,15 +293,8 @@ private:
 
     int margin_left=5, margin_right=5,margin_top=5,margin_bottom=5;
 
-    //Widgets for rendering code blocks with copy & horizontal scroll
-    struct code_block_widget_info{
-        QLabel* label;
-        QScrollArea* scroll_area;
-        QToolButton* copy_button;
-        QRect rect;
-        QString text;
-    };
-    std::vector<code_block_widget_info> m_code_widgets;
+    //Widgets for rendering code blocks
+    std::vector<CodeBlockWidget*> m_code_widgets;
 
     //void parseText();
     void parseMarkdown(const QString& text);
@@ -340,7 +334,7 @@ private:
 
     //Helpers for managing embedded code block widgets
     void clear_code_block_widgets();
-    void create_code_block_widget(const QRect& rect, const QString& text, const QFont& font);
+    void create_code_block_widget(const QRect& rect, const QString& text, const QFont& font, const QString& language = QString());
 
 protected:
     void paintEvent(QPaintEvent* event) override;
