@@ -6,8 +6,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(BUILD_EXAMPLES "Build example applications" ON)
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 
-# Fetch MicroTeX using FetchContent
+# Fetch MicroTeX using FetchContent - use Populate to avoid building MicroTeX targets
 include(FetchContent)
+
+# Allow FetchContent_Populate to suppress deprecation warning
+cmake_policy(SET CMP0169 OLD)
 
 FetchContent_Declare(
     MicroTeX
@@ -15,9 +18,10 @@ FetchContent_Declare(
     GIT_TAG master
 )
 
-# Make MicroTeX available
-FetchContent_MakeAvailable(MicroTeX)
-
+# Populate MicroTeX source without building its targets
+FetchContent_Populate(MicroTeX)
+# Set the source directory variable manually since we're not using MakeAvailable
+set(microtex_SOURCE_DIR ${microtex_SOURCE_DIR})
 find_package(PkgConfig REQUIRED)
 find_package(md4c CONFIG REQUIRED)
 
