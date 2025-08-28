@@ -22,7 +22,7 @@ CodeBlockWidget::CodeBlockWidget(const QString& text,int font_size, const QStrin
     , m_text(text)
     , m_language(language)
 {
-    setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Expanding);
+    setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Ignored);
     m_font.setPointSize(font_size);
     setupUI();
 }
@@ -32,10 +32,15 @@ void CodeBlockWidget::setupUI()
 {
     // Create main layout
     m_mainLayout = new QVBoxLayout(this);
+    setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Preferred);
 
-
-    // Create header layout
-    m_headerLayout = new QHBoxLayout();
+    QPalette pal= QGuiApplication::palette();
+    // Create header
+    QWidget* header = new QWidget();
+    header->setStyleSheet(QString(R"(
+        background-color: %1;
+    )").arg(pal.alternateBase().color().name()));
+    m_headerLayout = new QHBoxLayout(header);
     m_headerLayout->setContentsMargins(MARGIN, MARGIN, MARGIN, 0);
 
     QLabel* language_label = new QLabel(m_language,this);
@@ -55,31 +60,50 @@ void CodeBlockWidget::setupUI()
     // Create text label
     m_textLabel = new QLabel(this);
     m_textLabel->setTextFormat(Qt::PlainText);
-    m_textLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-    m_textLabel->setWordWrap(false);
+    m_textLabel->setText(m_text);
+    m_textLabel->setFont(m_font);
+    m_textLabel->setMargin(10);
+    m_textLabel->setObjectName("scrollAreaContent");
+
     QFontMetrics fm(m_font);
     int lines= m_text.split('\n').length();
+
+    /*
+
     m_textLabel->setMinimumHeight(lines*fm.lineSpacing());
+    */
 
     // Create scroll area
-    m_scrollArea = new QScrollArea(this);
+    QWidget* text_area = new QWidget(this);
+    m_scrollArea = new QScrollArea(text_area);
     m_scrollArea->setWidgetResizable(true);
     m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
     m_scrollArea->setFrameShape(QFrame::NoFrame);
     m_scrollArea->setWidget(m_textLabel);
-    m_scrollArea->setMinimumHeight(m_textLabel->height());
+    m_scrollArea->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+    
+    // Create layout for text_area with padding
+    QVBoxLayout* textAreaLayout = new QVBoxLayout(text_area);
+    textAreaLayout->setContentsMargins(10, 10, 10, 10); // Add padding
+    textAreaLayout->addWidget(m_scrollArea);
+    
+    text_area->setObjectName("border");
+    text_area->setStyleSheet(QString(R"(
+        QWidget#border {
+            border-radius: 10px;
+            border: 2px solid %1;
+        }
+    )").arg(pal.base().color().darker(75).name()));
+
 
 
 
     // Add layouts to main layout
-    m_mainLayout->addLayout(m_headerLayout);
-    m_mainLayout->addWidget(m_scrollArea, 1);
+    m_mainLayout->addWidget(header);
+    m_mainLayout->addWidget(text_area);
 
     // Apply text, font, and styling
-    if (!m_text.isEmpty()) {
-        m_textLabel->setText(m_text);
-    }
-    m_textLabel->setFont(m_font);
+
 }
 
 
