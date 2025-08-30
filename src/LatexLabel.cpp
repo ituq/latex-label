@@ -225,7 +225,9 @@ int LatexLabel::leaveBlockCallback(MD_BLOCKTYPE type, void* detail, void* userda
         state->segments=state->blockStack.back()->children;
     }
     else if(type == MD_BLOCK_CODE){
-        state->blockStack.back()->children.pop_back(); // remove final \n
+        if(!state->blockStack.back()->children.empty()) {
+            state->blockStack.back()->children.pop_back(); // remove final \n
+        }
     }
 
     state->blockStack.pop_back();
@@ -946,7 +948,7 @@ void LatexLabel::renderCodeBlock(const Element& segment, qreal& x, qreal& y, qre
     QFont font = getFont(&segment);
     QString full_text;
     for(const Element* child : segment.children) {
-        if(child->type == DisplayType::span && SPANTYPE(child) == spantype::code) {
+        if(child != nullptr && child->type == DisplayType::span && SPANTYPE(child) == spantype::code) {
             QString chunk = ((span_data*)child->data)->text;
             full_text += chunk;
         }
