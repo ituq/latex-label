@@ -38,7 +38,7 @@ enum class font_type{
     mono,
     strikethrough,
     underline,
-    link,
+    hyperlink,
     heading1,
     heading2,
     heading3,

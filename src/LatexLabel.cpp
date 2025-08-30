@@ -248,7 +248,7 @@ int LatexLabel::enterSpanCallback(MD_SPANTYPE type, void* detail, void* userdata
     switch(type) {
         case MD_SPAN_EM:
             *subtype=spantype::italic;
-            span->data= malloc(sizeof(span_data));
+            span->data= new span_data();
             break;
         case MD_SPAN_STRONG:
             if(!state->spanStack.empty()&&SPANTYPE(state->spanStack.back())==spantype::italic){
@@ -256,20 +256,20 @@ int LatexLabel::enterSpanCallback(MD_SPANTYPE type, void* detail, void* userdata
                 state->blockStack.back()->children.pop_back();
                 Element* ital = state->spanStack.back();
                 state->spanStack.pop_back();
-                free(ital->data);
+                delete (span_data*)ital->data;
                 free(ital->subtype);
                 delete ital;
                 *subtype=spantype::italic_bold;
-                span->data= malloc(sizeof(span_data));
+                span->data= new span_data();
                 break;
             }
             *subtype=spantype::bold;
-            span->data= malloc(sizeof(span_data));
+            span->data= new span_data();
             break;
         case MD_SPAN_A:{
 
-            *subtype=spantype::link;
-            link_data* data = (link_data*)malloc(sizeof(link_data));
+            *subtype=spantype::hyperlink;
+            link_data* data = new link_data();
 
             if(detail) {
                 MD_SPAN_A_DETAIL* a_detail = (MD_SPAN_A_DETAIL*)detail;
@@ -295,15 +295,15 @@ int LatexLabel::enterSpanCallback(MD_SPANTYPE type, void* detail, void* userdata
             break;
         case MD_SPAN_CODE:
             *subtype=spantype::code;
-            span->data= malloc(sizeof(span_data));
+            span->data= new span_data();
             break;
         case MD_SPAN_DEL:
             *subtype=spantype::strikethrough;
-            span->data= malloc(sizeof(span_data));
+            span->data= new span_data();
             break;
         case MD_SPAN_LATEXMATH:{
             *subtype=spantype::latex;
-            latex_data* data = (latex_data*) malloc(sizeof(latex_data));
+            latex_data* data = new latex_data();
             data->isInline=true;
             span->data=data;
         }
@@ -311,7 +311,7 @@ int LatexLabel::enterSpanCallback(MD_SPANTYPE type, void* detail, void* userdata
 
         case MD_SPAN_LATEXMATH_DISPLAY:{
             *subtype=spantype::latex;
-            latex_data* data = (latex_data*) malloc(sizeof(latex_data));
+            latex_data* data = new latex_data();
             data->isInline=false;
             span->data=data;
         }
@@ -321,7 +321,7 @@ int LatexLabel::enterSpanCallback(MD_SPANTYPE type, void* detail, void* userdata
             break;
         case MD_SPAN_U:
             *subtype=spantype::underline;
-            span->data= malloc(sizeof(span_data));
+            span->data= new span_data();
             break;
     }
 
@@ -371,7 +371,7 @@ int LatexLabel::textCallback(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size
     if( state->spanStack.empty() ){ //no open span, add to recent block element
         Element* block= state->blockStack.back();
 
-        span_data* data = (span_data*) malloc(sizeof(span_data));
+        span_data* data = new span_data();
         switch(type) {
             case MD_TEXT_NORMAL:{
 
@@ -428,7 +428,7 @@ int LatexLabel::textCallback(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size
 
     switch(type) {
         case MD_TEXT_NORMAL:
-            if(SPANTYPE(parent_span)==spantype::link){
+            if(SPANTYPE(parent_span)==spantype::hyperlink){
                 ((link_data*)data)->title=textStr;
                 break;
             }
@@ -468,7 +468,41 @@ void LatexLabel::cleanup_segments(std::vector<Element*>& segments) {
     for(Element* elem : segments) {
         if(elem == nullptr) continue;
 
+        // Clean up data based on element type
+        if(elem->data != nullptr) {
+            if(elem->type == DisplayType::span) {
+                spantype stype = *(spantype*)elem->subtype;
+                switch(stype) {
+                    case spantype::hyperlink:
+                        delete (link_data*)elem->data;
+                        break;
+                    case spantype::latex:
+                        delete (latex_data*)elem->data;
+                        break;
+                    case spantype::normal:
+                    case spantype::bold:
+                    case spantype::italic:
+                    case spantype::italic_bold:
+                    case spantype::code:
+                    case spantype::strikethrough:
+                    case spantype::underline:
+                    case spantype::linebreak:
+                        delete (span_data*)elem->data;
+                        break;
+                    case spantype::image:
+                        // Handle image data if needed
+                        break;
+                }
+            } else if(elem->type == DisplayType::block) {
+                // Handle block data types that use malloc (primitives only)
+                free(elem->data);
+            }
+        }
 
+        // Clean up subtype
+        if(elem->subtype != nullptr) {
+            free(elem->subtype);
+        }
 
         //Recursively clean up children for block elements
         if(elem->type==DisplayType::block) {
@@ -570,7 +604,7 @@ QFont LatexLabel::getFont(font_type type) const {
                     break;
 
         case font_type::underline:
-        case font_type::link: // Links are also underlined
+        case font_type::hyperlink: // Links are also underlined
             font.setUnderline(true);
             break;
 
@@ -628,7 +662,7 @@ QFont LatexLabel::getFont(const Element* segment) const {
             case spantype::underline:
                 font.setUnderline(true);
                 break;
-            case spantype::link:
+            case spantype::hyperlink:
                 font.setUnderline(true);
                 break;
             case spantype::strikethrough:
@@ -670,7 +704,7 @@ void LatexLabel::renderSpan(const Element& segment, qreal& x, qreal& y, qreal mi
         font = getFont(&segment);
     }
     spantype type = *(spantype*)segment.subtype;
-    QColor color = type==spantype::link ? Qt::blue : Qt::black;
+    QColor color = type==spantype::hyperlink ? Qt::blue : Qt::black;
 
 
 
@@ -1055,7 +1089,7 @@ void LatexLabel::calculate_table_dimensions(const Element& segment, int* max_wid
                     if(span_type == spantype::normal || span_type == spantype::code ||
                        span_type == spantype::bold || span_type == spantype::italic ||
                        span_type == spantype::italic_bold || span_type == spantype::underline ||
-                       span_type == spantype::link || span_type == spantype::strikethrough) {
+                       span_type == spantype::hyperlink || span_type == spantype::strikethrough) {
                         span_data* text_data = (span_data*)content->data;
                         if(!text_data) continue;
 
@@ -1461,7 +1495,7 @@ void LatexLabel::printSegmentRecursive(const Element* element, int depth) const 
         switch(sType) {
             case spantype::italic: spanTypeStr = "Italic"; break;
             case spantype::bold: spanTypeStr = "Bold"; break;
-            case spantype::link: spanTypeStr = "Link"; break;
+            case spantype::hyperlink: spanTypeStr = "Link"; break;
             case spantype::image: spanTypeStr = "Image"; break;
             case spantype::code: spanTypeStr = "Code"; break;
             case spantype::strikethrough: spanTypeStr = "Strikethrough"; break;
@@ -1473,7 +1507,7 @@ void LatexLabel::printSegmentRecursive(const Element* element, int depth) const 
         }
         qDebug().noquote() << QString("%1  spanType: %2").arg(indent, spanTypeStr);
 
-        if(sType == spantype::link && element->data) {
+        if(sType == spantype::hyperlink && element->data) {
             link_data* data = (link_data*)element->data;
             qDebug().noquote() << QString("%1  linkData: {").arg(indent);
             qDebug().noquote() << QString("%1    url: \"%2\"").arg(indent, data->url);
