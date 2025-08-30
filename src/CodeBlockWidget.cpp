@@ -95,7 +95,7 @@ void CodeBlockWidget::setupUI()
     // Create scroll area
     QWidget* text_area = new QWidget();
     m_textAreaWidget = text_area;
-    text_area->setContentsMargins(10,10,0,10);
+    text_area->setContentsMargins(10,10,2,10);
     m_scrollArea = new QScrollArea(text_area);
     m_scrollArea->setWidgetResizable(false);
     m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
