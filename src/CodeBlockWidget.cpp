@@ -42,7 +42,7 @@ CodeBlockWidget::CodeBlockWidget(const QString& text,int font_size, const QStrin
 void CodeBlockWidget::setupUI()
 {
 
-
+    int lineCount = std::max(1, static_cast<int>(m_text.count('\n')) + 1);
     // Create the container widget that will have the border
     //QWidget* container = new QWidget();
     //container->setObjectName("borderContainer");
@@ -66,8 +66,11 @@ void CodeBlockWidget::setupUI()
 
     m_headerLayout = new QHBoxLayout(header);
     m_headerLayout->setContentsMargins(5, 2, 5, 2);
-
     QLabel* language_label = new QLabel(m_language,this);
+    if(m_language=="")
+        language_label->setText(QString("%1 Lines").arg(lineCount));
+
+
     m_headerLayout->addWidget(language_label);
 
     m_headerLayout->addStretch();
@@ -88,7 +91,7 @@ void CodeBlockWidget::setupUI()
 
 
     QFontMetrics fm(m_font);
-    int lineCount = std::max(1, static_cast<int>(m_text.count('\n')) + 1);
+
     int contentH = lineCount * fm.lineSpacing();
     m_textLabel->setFixedHeight(contentH);
 
