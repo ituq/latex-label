@@ -58,6 +58,7 @@ void CodeBlockWidget::setupUI()
     setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
     // Create header
     QWidget* header = new QWidget();
+    header->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Maximum);
     m_headerWidget = header;
     header->setContentsMargins(5,5,5,5);
     header->setObjectName("header");
