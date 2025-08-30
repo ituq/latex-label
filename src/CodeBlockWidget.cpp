@@ -95,7 +95,7 @@ void CodeBlockWidget::setupUI()
     // Create scroll area
     QWidget* text_area = new QWidget();
     m_textAreaWidget = text_area;
-    text_area->setContentsMargins(10,0,0,0);
+    text_area->setContentsMargins(10,10,0,10);
     m_scrollArea = new QScrollArea(text_area);
     m_scrollArea->setWidgetResizable(false);
     m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
@@ -109,7 +109,7 @@ void CodeBlockWidget::setupUI()
     QVBoxLayout* textAreaLayout = new QVBoxLayout(text_area);
     m_textAreaLayout = textAreaLayout;
     textAreaLayout->addWidget(m_scrollArea);
-    textAreaLayout->setContentsMargins(2,2,2,8);
+    textAreaLayout->setContentsMargins(0,0,0,0);
     text_area->setObjectName("Frame");
     applyPaletteStyles();
 

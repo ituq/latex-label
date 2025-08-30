@@ -958,7 +958,7 @@ void LatexLabel::renderCodeBlock(const Element& segment, qreal& x, qreal& y, qre
     int line_height = fm.lineSpacing();
     int line_count = full_text.count('\n') + 1;
     int content_height =46+ fm.ascent()+std::max(line_height * line_count, line_height);
-    QRect block_rect(min_x, (int)(y - fm.ascent()), (int)(max_x - x), content_height);
+    QRect block_rect(min_x, y - fm.ascent(), max_x - x, content_height);
 
     QString language = ((code_block_data*) segment.data)->language;
 
