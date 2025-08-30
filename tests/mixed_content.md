@@ -33,6 +33,7 @@ Welcome to a comprehensive test of **markdown** and *LaTeX* integration. This do
   Matrix multiplication:
   (AB)_ij = Σ A_ik * B_kj
   ```
+-test
 
 ## Code with Math Comments
 

@@ -224,6 +224,9 @@ int LatexLabel::leaveBlockCallback(MD_BLOCKTYPE type, void* detail, void* userda
     if( type==MD_BLOCK_DOC){
         state->segments=state->blockStack.back()->children;
     }
+    else if(type == MD_BLOCK_CODE){
+        state->blockStack.back()->children.pop_back(); // remove final \n
+    }
 
     state->blockStack.pop_back();
 
@@ -916,10 +919,11 @@ void LatexLabel::renderCodeBlock(const Element& segment, qreal& x, qreal& y, qre
     }
 
     //Estimate widget rect
+    font.setPointSize(m_textSize);
     QFontMetrics fm(font);
     int line_height = fm.lineSpacing();
     int line_count = full_text.count('\n') + 1;
-    int content_height = std::max(line_height * line_count + 16, line_height + 16);
+    int content_height =46+ fm.ascent()+std::max(line_height * line_count, line_height);
     QRect block_rect((int)min_x, (int)(y - fm.ascent()), (int)(max_x - 10), content_height);
 
     QString language = ((code_block_data*) segment.data)->language;

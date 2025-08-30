@@ -1,3 +1,7 @@
+```
+Matrix multiplication:
+(AB)_ij = Σ A_ik * B_kj
+```
 ```cpp
 # Calculate the quadratic formula: x = (-b ± √(b²-4ac)) / 2a
 def quadratic_formula(a, b, c):
@@ -8,4 +12,8 @@ def quadratic_formula(a, b, c):
     x1 = (-b + discriminant**0.5) / (2*a)
     x2 = (-b - discriminant**0.5) / (2*a)
     return x1, x2
+```
+```
+Matrix multiplication:
+(AB)_ij = Σ A_ik * B_kj
 ```
