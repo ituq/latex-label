@@ -67,12 +67,12 @@ void CodeBlockWidget::setupUI()
 
     m_headerLayout = new QHBoxLayout(header);
     m_headerLayout->setContentsMargins(5, 2, 5, 2);
-    QLabel* language_label = new QLabel(m_language,this);
+    m_languageLabel = new QLabel(m_language,this);
     if(m_language=="")
-        language_label->setText(QString("%1 Lines").arg(lineCount));
+        m_languageLabel->setText(QString("%1 Lines").arg(lineCount));
 
 
-    m_headerLayout->addWidget(language_label);
+    m_headerLayout->addWidget(m_languageLabel);
 
     m_headerLayout->addStretch();
 
@@ -91,10 +91,13 @@ void CodeBlockWidget::setupUI()
     m_textLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
 
+
     QFontMetrics fm(m_font);
 
     int contentH = lineCount * fm.lineSpacing();
     m_textLabel->setFixedHeight(contentH);
+    m_textLabel->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
+
 
     // Create scroll area
     QWidget* text_area = new QWidget();
@@ -115,6 +118,8 @@ void CodeBlockWidget::setupUI()
     textAreaLayout->addWidget(m_scrollArea);
     textAreaLayout->setContentsMargins(0,0,0,0);
     text_area->setObjectName("Frame");
+    text_area->setStyleSheet("QWidget{background-color: rgba(255, 255, 255, 0);}");
+
     applyPaletteStyles();
 
 

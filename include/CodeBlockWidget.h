@@ -41,6 +41,7 @@ private:
     void applyPaletteStyles();
 
     QLabel* m_textLabel;
+    QLabel* m_languageLabel;
     QScrollArea* m_scrollArea;
     QToolButton* m_copyButton;
     QVBoxLayout* m_mainLayout;
@@ -70,7 +71,9 @@ inline void CodeBlockWidget::changeEvent(QEvent* event)
 
 inline void CodeBlockWidget::applyPaletteStyles()
 {
+
     const QPalette pal = QGuiApplication::palette();
+
     if (m_headerWidget) {
         m_headerWidget->setStyleSheet(QString(R"(
         QWidget#header {
@@ -78,7 +81,7 @@ inline void CodeBlockWidget::applyPaletteStyles()
             border-top-left-radius: 10px;
             border-top-right-radius: 10px;
         }
-    )").arg(pal.base().color().darker(75).name()));
+    )").arg(pal.base().color().darker(120).name()));
     }
     if (m_textAreaWidget) {
         m_textAreaWidget->setStyleSheet(QString(R"(
@@ -86,7 +89,25 @@ inline void CodeBlockWidget::applyPaletteStyles()
             border-bottom-left-radius: 10px;
             border-bottom-right-radius: 10px;
             border: 2px solid %1;
+            background-color: %2;
         }
-    )").arg(pal.base().color().darker(75).name()));
+    )").arg(pal.base().color().darker(120).name())
+        .arg(pal.base().color().lighter(120).name()));
+    }
+    if( m_textLabel)
+        m_textLabel->setStyleSheet(QString("QWidget{background-color: %1; color: %2;}")
+            .arg(pal.base().color().name())
+            .arg(pal.text().color().name()));
+    if(m_scrollArea)
+        m_scrollArea->setStyleSheet(QString("QWidget{background-color: %1;}").arg(pal.base().color().name()));
+    if(m_copyButton){
+        m_copyButton->setStyleSheet(QString("QWidget{background-color: %1;color: %2;}")
+            .arg(pal.button().color().name())
+            .arg(pal.text().color().name()));
+    }
+    if(m_languageLabel){
+        m_languageLabel->setStyleSheet(QString("QWidget{background-color: %1; color: %2;}")
+            .arg(pal.base().color().darker(120).name())
+            .arg(pal.text().color().name()));
     }
 }

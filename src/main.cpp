@@ -145,6 +145,11 @@ int main(int argc, char* argv[]){
     scroll->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     scroll->setWidgetResizable(true);
     LatexLabel* label = new LatexLabel(scroll);
+    //Apply style only to LatexLabel via style sheet
+    //label->setStyleSheet("QWidget{background-color: blue;}");
+
+    label->setAutoFillBackground(true);
+    //Ensure palette text roles align so custom painting and LaTeX use white
     label->setTextSize(20);
     label->setText("Select a test file to load markdown content with LaTeX support.");
     scroll->setWidget(label);

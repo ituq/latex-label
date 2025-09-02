@@ -14,6 +14,8 @@
 #include <QEvent>
 #include <QTextOption>
 #include <QFrame>
+#include <QStyleOption>
+#include <QStyle>
 #include <md4c.h>
 #include <vector>
 
@@ -24,6 +26,7 @@ LatexLabel::LatexLabel(QWidget* parent) : QWidget(parent), _render(nullptr), m_t
     setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     setFocusPolicy(Qt::StrongFocus);
     QFontMetricsF base_metric(QFont("Arial",m_textSize));
+    setAttribute(Qt::WA_StyledBackground, true);
     widget_height=300; // Start with a reasonable height
     setMinimumHeight(widget_height);
 }
@@ -1214,7 +1217,9 @@ void LatexLabel::paintEvent(QPaintEvent* event){
      */
 
     QPainter painter(this);
-    painter.fillRect(rect(), m_pallete.window()); // White background
+    QStyleOption opt;
+    opt.initFrom(this);
+    style()->drawPrimitive(QStyle::PE_Widget, &opt, &painter, this);
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setPen(Qt::black);
 
@@ -1225,16 +1230,16 @@ void LatexLabel::paintEvent(QPaintEvent* event){
         if(f.is_highlighted){
             painter.save();
             painter.setPen(Qt::NoPen);
-            painter.setBrush(m_pallete.highlight());
+            painter.setBrush(palette().highlight());
             painter.drawRect(f.bounding_box);
             painter.restore();
-            painter.setPen(m_pallete.highlightedText().color());
+            painter.setPen(palette().highlightedText().color());
         }
         switch (f.type) {
             case fragment_type::latex:{
                 frag_latex_data* data = (frag_latex_data*) f.data;
                 painter.save();
-                painter.setBrush(m_pallete.text());
+                painter.setBrush(palette().text());
 
                 tex::Graphics2D_qt g2(&painter);
                 data->render->draw(g2, f.bounding_box.x(), f.bounding_box.y());
@@ -1244,7 +1249,7 @@ void LatexLabel::paintEvent(QPaintEvent* event){
             case fragment_type::line:{
                 painter.save();
                 frag_line_data* data = (frag_line_data*) f.data;
-                painter.setPen(QPen(m_pallete.mid(), data->width));
+                painter.setPen(QPen(palette().mid(), data->width));
 
                 painter.drawLine(QPoint(f.bounding_box.x(),f.bounding_box.y()),data->to);
                 painter.restore();
@@ -1258,7 +1263,7 @@ void LatexLabel::paintEvent(QPaintEvent* event){
             case fragment_type::text:{
                 frag_text_data* data = (frag_text_data*) f.data;
                 painter.setFont(data->font);
-                painter.setPen(m_pallete.text().color());
+                painter.setPen(palette().text().color());
                 painter.drawText(f.bounding_box,data->text);
                 break;
             }
@@ -1291,8 +1296,8 @@ void LatexLabel::paintEvent(QPaintEvent* event){
 }
 
 void LatexLabel::changeEvent(QEvent* event) {
-    if(event->type() == QEvent::ApplicationPaletteChange || event->type() == QEvent::PaletteChange) {
-        m_pallete = QGuiApplication::palette();
+    if(event->type() == QEvent::ApplicationPaletteChange || event->type() == QEvent::PaletteChange || event->type() == QEvent::StyleChange) {
+        m_pallete = palette();
 
         //Update color for all latex fragments
         QRgb argb_color = palette().text().color().rgba();
