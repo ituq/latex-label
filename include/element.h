@@ -1,39 +1,12 @@
 #include <md4c.h>
+#include <variant>
 #include <vector>
 #include <QString>
 #include <latex.h>
+#include <iostream>
 
 #define BLOCKTYPE(b) *((MD_BLOCKTYPE*)b->subtype)
 #define SPANTYPE(b) *((spantype*)b->subtype)
-
-typedef enum DisplayType{
-    block,
-    span
-} DisplayTypeType;
-typedef enum spantype{
-    normal,
-    italic,
-    bold,
-    italic_bold,
-    image,
-    code,
-    hyperlink,
-    strikethrough,
-    underline,
-    linebreak,
-    latex
-} SpanType;
-
-class Element{
-
-public:
-Element(DisplayType type, void* data = nullptr, spantype span_type =spantype::normal, MD_BLOCKTYPE block_type = MD_BLOCKTYPE::MD_BLOCK_P);
-~Element();
-DisplayType type;
-void* data;
-void* subtype;
-std::vector<Element*> children;
-};
 
 struct list_data{
     char mark; // mark delimiter if ordered
@@ -65,3 +38,46 @@ struct latex_data{
     QString text;
     bool isInline;
 };
+
+typedef enum DisplayType{
+    block,
+    span
+} DisplayTypeType;
+typedef enum spantype{
+    normal,
+    italic,
+    bold,
+    italic_bold,
+    image,
+    code,
+    hyperlink,
+    strikethrough,
+    underline,
+    linebreak,
+    latex
+} SpanType;
+using ElementData = std::variant<
+    std::monostate,
+    list_data,
+    list_item_data,
+    heading_data,
+    code_block_data,
+    span_data,
+    link_data,
+    latex_data
+>;
+
+class Element{
+
+public:
+Element(DisplayType type, ElementData data = {}, spantype span_type =spantype::normal, MD_BLOCKTYPE block_type = MD_BLOCKTYPE::MD_BLOCK_P);
+~Element();
+DisplayType type;
+ElementData data;
+void* subtype;
+std::vector<Element*> children;
+
+friend std::ostream& operator<<(std::ostream& os, const Element& element);
+};
+
+std::ostream& operator<<(std::ostream& os, const Element& element);

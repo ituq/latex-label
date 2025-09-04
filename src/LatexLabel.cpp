@@ -17,6 +17,7 @@
 #include <QStyleOption>
 #include <QStyle>
 #include <md4c.h>
+#include <variant>
 #include <vector>
 
 static double widget_height=200;
@@ -101,37 +102,37 @@ int LatexLabel::enterBlockCallback(MD_BLOCKTYPE type, void* detail, void* userda
             break;
         }
         case MD_BLOCK_UL:{
-            list_data* data = (list_data*) malloc(sizeof(list_data));
-            data->is_ordered = false;
+            list_data data;
+            data.is_ordered = false;
             if(detail){
                 MD_BLOCK_UL_DETAIL* ul_detail = (MD_BLOCK_UL_DETAIL*) detail;
 
-                data->mark=ul_detail->mark;
+                data.mark=ul_detail->mark;
             }
-            block->data=(void*) data;
+            block->data=data;
             state->blockStack.back()->children.push_back(block);
             state->blockStack.push_back(block);
             break;
         }
         case MD_BLOCK_OL:{
-            list_data* data = (list_data*) malloc(sizeof(list_data));
-            data->is_ordered = true;
+            list_data data;
+            data.is_ordered = true;
             if(detail) {
                 MD_BLOCK_OL_DETAIL* ol_detail = (MD_BLOCK_OL_DETAIL*) detail;
-                data->start_index = (uint16_t) ol_detail->start;
-                data->mark= ol_detail->mark_delimiter;
+                data.start_index = (uint16_t) ol_detail->start;
+                data.mark= ol_detail->mark_delimiter;
             }
-            block->data=(void*) data;
+            block->data=data;
             state->blockStack.back()->children.push_back(block);
             state->blockStack.push_back(block);
             break;
         }
         case MD_BLOCK_LI:{
-            list_item_data* data = (list_item_data*) malloc(sizeof(list_item_data));
+            list_item_data data;
             Element* parent = state->blockStack.back();
-            data->is_ordered = ((list_data*)parent->data)->is_ordered;
-            data->item_index = parent->children.size()+1;
-            block->data=(void*) data;
+            data.is_ordered = std::get<list_data>(parent->data).is_ordered;
+            data.item_index = parent->children.size()+1;
+            block->data=data;
             state->blockStack.back()->children.push_back(block);
             state->blockStack.push_back(block);
 
@@ -143,28 +144,28 @@ int LatexLabel::enterBlockCallback(MD_BLOCKTYPE type, void* detail, void* userda
             break;
         }
         case MD_BLOCK_H:{
-            heading_data* data = new heading_data();
+            heading_data data;
             if(detail) {
                 MD_BLOCK_H_DETAIL* h_detail = (MD_BLOCK_H_DETAIL*) detail;
-                data->level = h_detail->level;
+                data.level = h_detail->level;
             }
             else{
-                data->level = 1;
+                data.level = 1;
             }
-            block->data=(void*) data;
+            block->data=data;
             state->blockStack.back()->children.push_back(block);
             state->blockStack.push_back(block);
             break;
         }
         case MD_BLOCK_CODE:{
-            code_block_data* data = new code_block_data();
+            code_block_data data;
             if(detail) {
                 MD_BLOCK_CODE_DETAIL* code_detail = (MD_BLOCK_CODE_DETAIL*)(detail);
                 if(code_detail->lang.text) {
-                    data->language = QString::fromUtf8(code_detail->lang.text, code_detail->lang.size);
+                    data.language = QString::fromUtf8(code_detail->lang.text, code_detail->lang.size);
                 }
             }
-            block->data=(void*) data;
+            block->data=data;
             state->blockStack.back()->children.push_back(block);
             state->blockStack.push_back(block);
             break;
@@ -253,7 +254,6 @@ int LatexLabel::enterSpanCallback(MD_SPANTYPE type, void* detail, void* userdata
     switch(type) {
         case MD_SPAN_EM:
             *subtype=spantype::italic;
-            span->data= new span_data();
             break;
         case MD_SPAN_STRONG:
             if(!state->spanStack.empty()&&SPANTYPE(state->spanStack.back())==spantype::italic){
@@ -261,33 +261,30 @@ int LatexLabel::enterSpanCallback(MD_SPANTYPE type, void* detail, void* userdata
                 state->blockStack.back()->children.pop_back();
                 Element* ital = state->spanStack.back();
                 state->spanStack.pop_back();
-                delete (span_data*)ital->data;
                 free(ital->subtype);
                 delete ital;
                 *subtype=spantype::italic_bold;
-                span->data= new span_data();
                 break;
             }
             *subtype=spantype::bold;
-            span->data= new span_data();
             break;
         case MD_SPAN_A:{
 
             *subtype=spantype::hyperlink;
-            link_data* data = new link_data();
+            link_data data;
 
             if(detail) {
                 MD_SPAN_A_DETAIL* a_detail = (MD_SPAN_A_DETAIL*)detail;
                 if(a_detail->href.text) {
-                    data->url = QString::fromUtf8(a_detail->href.text, a_detail->href.size);
+                    data.url = QString::fromUtf8(a_detail->href.text, a_detail->href.size);
                 }
                 if(a_detail->title.text) {
-                    data->title = QString::fromUtf8(a_detail->title.text, a_detail->title.size);
+                    data.title = QString::fromUtf8(a_detail->title.text, a_detail->title.size);
                 }
             }
             else{
-                data->url = "Error parsing link";
-                data->title = "Error parsing link";
+                data.url = "Error parsing link";
+                data.title = "Error parsing link";
             }
             span->data = data;
         }
@@ -296,28 +293,26 @@ int LatexLabel::enterSpanCallback(MD_SPANTYPE type, void* detail, void* userdata
         case MD_SPAN_IMG:
             *subtype=spantype::image;
             qDebug()<<"images are not supported yet";
-            span->data=nullptr;
+            span->data={};
             break;
         case MD_SPAN_CODE:
             *subtype=spantype::code;
-            span->data= new span_data();
             break;
         case MD_SPAN_DEL:
             *subtype=spantype::strikethrough;
-            span->data= new span_data();
             break;
         case MD_SPAN_LATEXMATH:{
             *subtype=spantype::latex;
-            latex_data* data = new latex_data();
-            data->isInline=true;
+            latex_data data;
+            data.isInline=true;
             span->data=data;
         }
             break;
 
         case MD_SPAN_LATEXMATH_DISPLAY:{
             *subtype=spantype::latex;
-            latex_data* data = new latex_data();
-            data->isInline=false;
+            latex_data data;
+            data.isInline=false;
             span->data=data;
         }
             break;
@@ -326,7 +321,6 @@ int LatexLabel::enterSpanCallback(MD_SPANTYPE type, void* detail, void* userdata
             break;
         case MD_SPAN_U:
             *subtype=spantype::underline;
-            span->data= new span_data();
             break;
     }
 
@@ -373,24 +367,22 @@ int LatexLabel::textCallback(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size
 
     QString textStr = QString::fromUtf8(text, size);
     label->m_raw_text+=textStr;
-    if( state->spanStack.empty() ){ //no open span, add to recent block element
+    if(state->spanStack.empty()){ //no open span, add to recent block element
         Element* block= state->blockStack.back();
 
-        span_data* data = new span_data();
+        span_data data;
         switch(type) {
             case MD_TEXT_NORMAL:{
-
+                data.text = textStr;
                 Element* t = new Element(DisplayType::span,data,spantype::normal);
-                data->text = textStr;
                 block->children.push_back(t);
 
             }
                 break;
             case MD_TEXT_NULLCHAR:{
 
-
+                data.text = QChar(0xFFFD); // Unicode replacement character
                 Element* t = new Element(DisplayType::span,data,spantype::normal);
-                data->text = QChar(0xFFFD); // Unicode replacement character
                 block->children.push_back(t);
             }
                 break;
@@ -408,7 +400,7 @@ int LatexLabel::textCallback(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size
                 return 0; // ignore entity
                 break;
             case MD_TEXT_CODE:{
-                data->text = textStr;
+                data.text = textStr;
                 Element* t = new Element(DisplayType::span,data,spantype::code);
                 block->children.push_back(t);
             }
@@ -429,12 +421,16 @@ int LatexLabel::textCallback(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size
     //we have an open span, fill it with text
 
     Element* parent_span = state->spanStack.back();
-    span_data* data = (span_data*) parent_span->data;
+    ElementData* data_parent=&parent_span->data;
+    //printf("parent: %p, data_parent: %p\n",parent_span,data_parent);
+    span_data* data = std::get_if<span_data>(data_parent);
+    //printf("data actual pointer: %p\n",data);
 
     switch(type) {
         case MD_TEXT_NORMAL:
             if(SPANTYPE(parent_span)==spantype::hyperlink){
-                ((link_data*)data)->title=textStr;
+                link_data* data=std::get_if<link_data>(data_parent);
+                data->title=textStr;
                 break;
             }
             data->text=textStr;
@@ -457,7 +453,7 @@ int LatexLabel::textCallback(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size
             break;
         case MD_TEXT_LATEXMATH:
             {
-            latex_data* data_latex = (latex_data*)parent_span->data;
+            latex_data* data_latex = std::get_if<latex_data>(data_parent);
             QRgb argb_color = label->palette().text().color().rgba();
             data_latex->render=getLatexRenderer(textStr, data_latex->isInline, state->textSize, argb_color);
             data_latex->text=textStr;
@@ -472,52 +468,6 @@ int LatexLabel::textCallback(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size
 void LatexLabel::cleanup_segments(std::vector<Element*>& segments) {
     for(Element* elem : segments) {
         if(elem == nullptr) continue;
-
-        // Clean up data based on element type
-        if(elem->data != nullptr) {
-            if(elem->type == DisplayType::span) {
-                spantype stype = *(spantype*)elem->subtype;
-                switch(stype) {
-                    case spantype::hyperlink:
-                        delete (link_data*)elem->data;
-                        break;
-                    case spantype::latex:
-                        delete (latex_data*)elem->data;
-                        break;
-                    case spantype::normal:
-                    case spantype::bold:
-                    case spantype::italic:
-                    case spantype::italic_bold:
-                    case spantype::code:
-                    case spantype::strikethrough:
-                    case spantype::underline:
-                    case spantype::linebreak:
-                        delete (span_data*)elem->data;
-                        break;
-                    case spantype::image:
-                        // Handle image data if needed
-                        break;
-                }
-            } else if(elem->type == DisplayType::block) {
-                // Handle block data types that use malloc (primitives only)
-                free(elem->data);
-            }
-        }
-
-        // Clean up subtype
-        if(elem->subtype != nullptr) {
-            free(elem->subtype);
-        }
-
-        //Recursively clean up children for block elements
-        if(elem->type==DisplayType::block) {
-            if(!elem->children.empty()) {
-                cleanup_segments(elem->children);
-                elem->children.clear();
-            }
-        }
-
-        //Delete the element itself
         delete elem;
     }
     m_segments.clear();
@@ -647,8 +597,8 @@ QFont LatexLabel::getFont(const Element* segment) const {
     QFont font("Arial", m_textSize);
 
     if(segment->type==DisplayType::block&&BLOCKTYPE(segment)==MD_BLOCK_H){
-        heading_data* data = (heading_data*) segment->data;
-        int headingSize = std::max(8, m_textSize + (6 - data->level) * 4);
+        heading_data data = std::get<heading_data>(segment->data);
+        int headingSize = std::max(8, m_textSize + (6 - data.level) * 4);
         font.setPointSize(headingSize);
         font.setBold(true);
     }
@@ -727,30 +677,30 @@ void LatexLabel::renderSpan(const Element& segment, qreal& x, qreal& y, qreal mi
 
     // Handle LaTeX math
     if(type == spantype::latex) {
-        latex_data* data = (latex_data*) segment.data;
-        qreal renderWidth = data->render->getWidth();
-        qreal renderHeight = data->render->getHeight();
+        latex_data data = std::get<latex_data>(segment.data);
+        qreal renderWidth = data.render->getWidth();
+        qreal renderHeight = data.render->getHeight();
 
-        if(data->isInline&& x+renderWidth>max_x){
+        if(data.isInline&& x+renderWidth>max_x){
             //inline latex, check if it fits on line
             x = min_x;
             y += metrics.lineSpacing();
 
         }
-        else if(!data->isInline){
+        else if(!data.isInline){
             y += 2*metrics.height();
             x=(max_x-min_x)/2-renderWidth/2;
         }
 
         // Draw LaTeX expression
-        qreal latexY = y - (renderHeight - data->render->getDepth());
-        int width=data->render->getWidth();
-        int height= data->render->getHeight();
-        m_display_list.push_back(Fragment(QRect(x,latexY,width,height),data->render,data->text,data->isInline));
+        qreal latexY = y - (renderHeight - data.render->getDepth());
+        int width=data.render->getWidth();
+        int height= data.render->getHeight();
+        m_display_list.push_back(Fragment(QRect(x,latexY,width,height),data.render,data.text,data.isInline));
 
 
 
-        if(data->isInline){
+        if(data.isInline){
             x += renderWidth + metrics.horizontalAdvance(" ");
         }
         else{
@@ -762,8 +712,8 @@ void LatexLabel::renderSpan(const Element& segment, qreal& x, qreal& y, qreal mi
     }
 
     //regular text
-    span_data* data = (span_data*) segment.data;
-    QString text = data->text;
+    span_data data = std::get<span_data>(segment.data);
+    QString text = data.text;
 
 
 
@@ -859,16 +809,16 @@ void LatexLabel::renderListElement(const Element& segment, qreal& x, qreal& y, i
 
 
     if(type==MD_BLOCK_LI) {
-        list_item_data* data =(list_item_data*) segment.data;
+        list_item_data data =std::get<list_item_data>(segment.data);
         //draw list marker
         QFont baseFont("Arial", m_textSize);
 
 
 
         QString marker;
-        if(data->is_ordered) {
+        if(data.is_ordered) {
             //ordered list - use item number
-            marker = QString::number(data->item_index) + ". ";
+            marker = QString::number(data.item_index) + ". ";
         } else {
             //unordered list - use bullet
             marker = "• "; //TODO: replace with actual markers
@@ -952,7 +902,7 @@ void LatexLabel::renderCodeBlock(const Element& segment, qreal& x, qreal& y, qre
     QString full_text;
     for(const Element* child : segment.children) {
         if(child != nullptr && child->type == DisplayType::span && SPANTYPE(child) == spantype::code) {
-            QString chunk = ((span_data*)child->data)->text;
+            QString chunk = std::get<span_data>(child->data).text;
             full_text += chunk;
         }
     }
@@ -965,7 +915,7 @@ void LatexLabel::renderCodeBlock(const Element& segment, qreal& x, qreal& y, qre
     int content_height =46+ fm.ascent()+std::max(line_height * line_count, line_height);
     QRect block_rect(min_x, y - fm.ascent(), max_x - x, content_height);
 
-    QString language = ((code_block_data*) segment.data)->language;
+    QString language = std::get<code_block_data>(segment.data).language;
 
     //Create embedded code widget with horizontal scrolling and copy button
     create_code_block_widget(block_rect, full_text, font, language);
@@ -1069,25 +1019,23 @@ void LatexLabel::calculate_table_dimensions(const Element& segment, int* max_wid
                     spantype span_type = SPANTYPE(content);
 
                     if(span_type == spantype::latex) {
-                        latex_data* latex_ptr = (latex_data*)content->data;
-                        if(latex_ptr && latex_ptr->render) {
-                            int latex_width = (int)latex_ptr->render->getWidth();
-                            int latex_height = (int)latex_ptr->render->getHeight();
+                        latex_data latex_details = std::get<latex_data>(content->data);
+                        int latex_width = (int)latex_details.render->getWidth();
+                        int latex_height = (int)latex_details.render->getHeight();
 
-                            //Use base font for space width when advancing after inline latex
-                            QFont base_font("Arial", m_textSize);
-                            QFontMetrics base_metrics(base_font);
-                            int space_width = base_metrics.horizontalAdvance(" ");
+                        //Use base font for space width when advancing after inline latex
+                        QFont base_font("Arial", m_textSize);
+                        QFontMetrics base_metrics(base_font);
+                        int space_width = base_metrics.horizontalAdvance(" ");
 
-                            if(current_x_sim + latex_width > available_width) {
-                                cell_height += current_line_height > 0 ? current_line_height : base_metrics.lineSpacing();
-                                current_x_sim = 0;
-                                current_line_height = 0;
-                            }
-
-                            current_x_sim += latex_width + space_width;
-                            if(latex_height > current_line_height) current_line_height = latex_height;
+                        if(current_x_sim + latex_width > available_width) {
+                            cell_height += current_line_height > 0 ? current_line_height : base_metrics.lineSpacing();
+                            current_x_sim = 0;
+                            current_line_height = 0;
                         }
+
+                        current_x_sim += latex_width + space_width;
+                        if(latex_height > current_line_height) current_line_height = latex_height;
                         continue;
                     }
 
@@ -1095,12 +1043,11 @@ void LatexLabel::calculate_table_dimensions(const Element& segment, int* max_wid
                        span_type == spantype::bold || span_type == spantype::italic ||
                        span_type == spantype::italic_bold || span_type == spantype::underline ||
                        span_type == spantype::hyperlink || span_type == spantype::strikethrough) {
-                        span_data* text_data = (span_data*)content->data;
-                        if(!text_data) continue;
+                        span_data text_data = std::get<span_data>(content->data);
 
                         QFont font = getFont(content);
                         QFontMetrics metrics(font);
-                        QStringList words = text_data->text.split(' ', Qt::SkipEmptyParts);
+                        QStringList words = text_data.text.split(' ', Qt::SkipEmptyParts);
 
                         for(const QString& word : words) {
                             if(word == "\n") {
@@ -1463,35 +1410,35 @@ void LatexLabel::printSegmentRecursive(const Element* element, int depth) const 
         }
         qDebug().noquote() << QString("%1  blockType: %2").arg(indent, blockTypeStr);
 
-        if(blockType == MD_BLOCK_LI && element->data) {
-            list_item_data* data = (list_item_data*)element->data;
+        if(blockType == MD_BLOCK_LI) {
+            list_item_data data = std::get<list_item_data>(element->data);
             qDebug().noquote() << QString("%1  listItemData: {").arg(indent);
-            qDebug().noquote() << QString("%1    isOrdered: %2").arg(indent).arg(data->is_ordered ? "true" : "false");
-            qDebug().noquote() << QString("%1    itemIndex: %2").arg(indent).arg(data->item_index);
+            qDebug().noquote() << QString("%1    isOrdered: %2").arg(indent).arg(data.is_ordered ? "true" : "false");
+            qDebug().noquote() << QString("%1    itemIndex: %2").arg(indent).arg(data.item_index);
             qDebug().noquote() << QString("%1  }").arg(indent);
         }
 
-        if(blockType == MD_BLOCK_H && element->data) {
-            heading_data* data = (heading_data*)element->data;
+        if(blockType == MD_BLOCK_H) {
+            heading_data data = std::get<heading_data>(element->data);
             qDebug().noquote() << QString("%1  headingData: {").arg(indent);
-            qDebug().noquote() << QString("%1    level: %2").arg(indent).arg(data->level);
+            qDebug().noquote() << QString("%1    level: %2").arg(indent).arg(data.level);
             qDebug().noquote() << QString("%1  }").arg(indent);
         }
 
-        if((blockType == MD_BLOCK_UL || blockType == MD_BLOCK_OL) && element->data) {
-            list_data* data = (list_data*)element->data;
+        if((blockType == MD_BLOCK_UL || blockType == MD_BLOCK_OL)) {
+            list_data data = std::get<list_data>(element->data);
             qDebug().noquote() << QString("%1  listData: {").arg(indent);
-            qDebug().noquote() << QString("%1    isOrdered: %2").arg(indent).arg(data->is_ordered ? "true" : "false");
-            if(data->is_ordered) {
-                qDebug().noquote() << QString("%1    startIndex: %2").arg(indent).arg(data->start_index);
+            qDebug().noquote() << QString("%1    isOrdered: %2").arg(indent).arg(data.is_ordered ? "true" : "false");
+            if(data.is_ordered) {
+                qDebug().noquote() << QString("%1    startIndex: %2").arg(indent).arg(data.start_index);
             }
             qDebug().noquote() << QString("%1  }").arg(indent);
         }
 
-        if(blockType == MD_BLOCK_CODE && element->data) {
-            code_block_data* data = (code_block_data*)element->data;
+        if(blockType == MD_BLOCK_CODE) {
+            code_block_data data = std::get<code_block_data>(element->data);
             qDebug().noquote() << QString("%1  codeBlockData: {").arg(indent);
-            qDebug().noquote() << QString("%1    language: \"%2\"").arg(indent, data->language);
+            qDebug().noquote() << QString("%1    language: \"%2\"").arg(indent, data.language);
             qDebug().noquote() << QString("%1  }").arg(indent);
         }
     }
@@ -1514,32 +1461,32 @@ void LatexLabel::printSegmentRecursive(const Element* element, int depth) const 
         }
         qDebug().noquote() << QString("%1  spanType: %2").arg(indent, spanTypeStr);
 
-        if(sType == spantype::hyperlink && element->data) {
-            link_data* data = (link_data*)element->data;
+        if(sType == spantype::hyperlink) {
+            link_data data = std::get<link_data>(element->data);
             qDebug().noquote() << QString("%1  linkData: {").arg(indent);
-            qDebug().noquote() << QString("%1    url: \"%2\"").arg(indent, data->url);
-            qDebug().noquote() << QString("%1    title: \"%2\"").arg(indent, data->title);
+            qDebug().noquote() << QString("%1    url: \"%2\"").arg(indent, data.url);
+            qDebug().noquote() << QString("%1    title: \"%2\"").arg(indent, data.title);
             qDebug().noquote() << QString("%1  }").arg(indent);
         }
 
-        if(sType == spantype::latex && element->data) {
-            latex_data* data = (latex_data*)element->data;
+        if(sType == spantype::latex) {
+            latex_data data = std::get<latex_data>(element->data);
             qDebug().noquote() << QString("%1  latexData: {").arg(indent);
-            qDebug().noquote() << QString("%1    isInline: %2").arg(indent).arg(data->isInline ? "true" : "false");
-            if(data->render) {
+            qDebug().noquote() << QString("%1    isInline: %2").arg(indent).arg(data.isInline ? "true" : "false");
+            if(data.render) {
                 qDebug().noquote() << QString("%1    render: (width: %2, height: %3)")
                     .arg(indent)
-                    .arg(data->render->getWidth())
-                    .arg(data->render->getHeight());
+                    .arg(data.render->getWidth())
+                    .arg(data.render->getHeight());
             } else {
                 qDebug().noquote() << QString("%1    render: null").arg(indent);
             }
             qDebug().noquote() << QString("%1  }").arg(indent);
         }
 
-        if((sType == spantype::normal || sType == spantype::code) && element->data) {
-            span_data* data = (span_data*)element->data;
-            QString contentStr = data->text;
+        if((sType == spantype::normal || sType == spantype::code)) {
+            span_data data = std::get<span_data>(element->data);
+            QString contentStr = data.text;
             if(contentStr.length() > 50) {
                 contentStr = contentStr.left(47) + "...";
             }
