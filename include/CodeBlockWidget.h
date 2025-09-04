@@ -92,11 +92,10 @@ inline void CodeBlockWidget::applyPaletteStyles()
             background-color: %2;
         }
     )").arg(pal.base().color().darker(120).name())
-        .arg(pal.base().color().lighter(120).name()));
+        .arg(pal.base().color().name()));
     }
     if( m_textLabel)
-        m_textLabel->setStyleSheet(QString("QWidget{background-color: %1; color: %2;}")
-            .arg(pal.base().color().name())
+        m_textLabel->setStyleSheet(QString("QWidget{color: %2;}")
             .arg(pal.text().color().name()));
     if(m_scrollArea)
         m_scrollArea->setStyleSheet(QString("QWidget{background-color: %1;}").arg(pal.base().color().name()));
