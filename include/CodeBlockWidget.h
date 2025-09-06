@@ -89,24 +89,19 @@ inline void CodeBlockWidget::applyPaletteStyles()
             border-bottom-left-radius: 10px;
             border-bottom-right-radius: 10px;
             border: 2px solid %1;
-            background-color: %2;
+            background-color: palette(base);
         }
-    )").arg(pal.base().color().darker(120).name())
-        .arg(pal.base().color().name()));
+    )").arg(pal.base().color().darker(120).name()));
     }
     if( m_textLabel)
-        m_textLabel->setStyleSheet(QString("QWidget{color: %2;}")
-            .arg(pal.text().color().name()));
+        m_textLabel->setStyleSheet("QWidget{color: palette(text); background-color: palette(base);}");
     if(m_scrollArea)
-        m_scrollArea->setStyleSheet(QString("QWidget{background-color: %1;}").arg(pal.base().color().name()));
+        m_scrollArea->setStyleSheet("QWidget#scrollArea{background-color: palette(base);}");
     if(m_copyButton){
-        m_copyButton->setStyleSheet(QString("QWidget{background-color: %1;color: %2;}")
-            .arg(pal.button().color().name())
-            .arg(pal.text().color().name()));
+        m_copyButton->setStyleSheet("QWidget{background-color: palette(button);color: palette(text);}");
     }
     if(m_languageLabel){
-        m_languageLabel->setStyleSheet(QString("QWidget{background-color: %1; color: %2;}")
-            .arg(pal.base().color().darker(120).name())
-            .arg(pal.text().color().name()));
+        m_languageLabel->setStyleSheet(QString("QWidget{background-color: %1; color: palette(text);}")
+            .arg(pal.base().color().darker(120).name()));
     }
 }

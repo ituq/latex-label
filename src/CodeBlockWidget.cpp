@@ -110,6 +110,7 @@ void CodeBlockWidget::setupUI()
     m_scrollArea->setFrameShape(QFrame::NoFrame);
     m_scrollArea->setWidget(m_textLabel);
     m_scrollArea->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+    m_scrollArea->setObjectName("scrollArea");
 
 
     // Create layout for text_area with padding
@@ -118,7 +119,7 @@ void CodeBlockWidget::setupUI()
     textAreaLayout->addWidget(m_scrollArea);
     textAreaLayout->setContentsMargins(0,0,0,0);
     text_area->setObjectName("Frame");
-    text_area->setStyleSheet("QWidget{background-color: rgba(255, 255, 255, 0);}");
+    text_area->setStyleSheet("QWidget#Frame{background-color: rgba(255, 255, 255, 0);}");
 
     applyPaletteStyles();
 
