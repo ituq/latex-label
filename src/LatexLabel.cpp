@@ -16,6 +16,7 @@
 #include <QFrame>
 #include <QStyleOption>
 #include <QStyle>
+#include <QPainterPath>
 #include <md4c.h>
 #include <variant>
 #include <vector>
@@ -88,9 +89,7 @@ int LatexLabel::enterBlockCallback(MD_BLOCKTYPE type, void* detail, void* userda
     };
     ExtendedParserState* extState = static_cast<ExtendedParserState*>(userdata);
     MarkdownParserState* state = extState->state;
-    Element* block = new Element(DisplayType::block);
-    block->subtype=malloc(sizeof(MD_BLOCKTYPE));
-    BLOCKTYPE(block) = type;
+    Element* block = new Element(DisplayType::block, {}, spantype::normal, type);
     switch(type) {
         case MD_BLOCK_DOC:{
             state->blockStack.push_back(block);
@@ -247,13 +246,11 @@ int LatexLabel::enterSpanCallback(MD_SPANTYPE type, void* detail, void* userdata
     };
     ExtendedParserState* extState = static_cast<ExtendedParserState*>(userdata);
     MarkdownParserState* state = extState->state;
-    Element* span = new Element(DisplayType::span);
-    span->subtype=malloc(sizeof(spantype));
-    spantype* subtype = (spantype*)span->subtype;
+    spantype span_type = spantype::normal;
 
     switch(type) {
         case MD_SPAN_EM:
-            *subtype=spantype::italic;
+            span_type = spantype::italic;
             break;
         case MD_SPAN_STRONG:
             if(!state->spanStack.empty()&&SPANTYPE(state->spanStack.back())==spantype::italic){
@@ -261,16 +258,13 @@ int LatexLabel::enterSpanCallback(MD_SPANTYPE type, void* detail, void* userdata
                 state->blockStack.back()->children.pop_back();
                 Element* ital = state->spanStack.back();
                 state->spanStack.pop_back();
-                free(ital->subtype);
                 delete ital;
-                *subtype=spantype::italic_bold;
+                span_type = spantype::italic_bold;
                 break;
             }
-            *subtype=spantype::bold;
+            span_type = spantype::bold;
             break;
         case MD_SPAN_A:{
-
-            *subtype=spantype::hyperlink;
             link_data data;
 
             if(detail) {
@@ -286,48 +280,54 @@ int LatexLabel::enterSpanCallback(MD_SPANTYPE type, void* detail, void* userdata
                 data.url = "Error parsing link";
                 data.title = "Error parsing link";
             }
-            span->data = data;
+            Element* span = new Element(DisplayType::span, data, spantype::hyperlink);
+            state->blockStack.back()->children.push_back(span);
+            state->spanStack.push_back(span);
+            return 0;
         }
-
-            break;
         case MD_SPAN_IMG:
-            *subtype=spantype::image;
+            span_type = spantype::image;
             qDebug()<<"images are not supported yet";
-            span->data={};
             break;
         case MD_SPAN_CODE:
-            *subtype=spantype::code;
+            span_type = spantype::code;
             break;
         case MD_SPAN_DEL:
-            *subtype=spantype::strikethrough;
+            span_type = spantype::strikethrough;
             break;
         case MD_SPAN_LATEXMATH:{
-            *subtype=spantype::latex;
             latex_data data;
             data.isInline=true;
-            span->data=data;
+            data.render = nullptr;
+            data.text = "";
+            Element* span = new Element(DisplayType::span, data, spantype::latex);
+            state->blockStack.back()->children.push_back(span);
+            state->spanStack.push_back(span);
+            return 0;
         }
-            break;
-
         case MD_SPAN_LATEXMATH_DISPLAY:{
-            *subtype=spantype::latex;
             latex_data data;
             data.isInline=false;
-            span->data=data;
+            data.render = nullptr;
+            data.text = "";
+            Element* span = new Element(DisplayType::span, data, spantype::latex);
+            state->blockStack.back()->children.push_back(span);
+            state->spanStack.push_back(span);
+            return 0;
         }
-            break;
         case MD_SPAN_WIKILINK:
             qDebug()<<"wiki links are not supported yet";
             break;
         case MD_SPAN_U:
-            *subtype=spantype::underline;
+            span_type = spantype::underline;
             break;
     }
 
-
+    span_data data;
+    data.text = "";
+    Element* span = new Element(DisplayType::span, data, span_type);
     state->blockStack.back()->children.push_back(span);
     state->spanStack.push_back(span);
-
 
     return 0;
 }
@@ -422,9 +422,6 @@ int LatexLabel::textCallback(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size
 
     Element* parent_span = state->spanStack.back();
     ElementData* data_parent=&parent_span->data;
-    //printf("parent: %p, data_parent: %p\n",parent_span,data_parent);
-    span_data* data = std::get_if<span_data>(data_parent);
-    //printf("data actual pointer: %p\n",data);
 
     switch(type) {
         case MD_TEXT_NORMAL:
@@ -433,30 +430,46 @@ int LatexLabel::textCallback(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size
                 data->title=textStr;
                 break;
             }
-            data->text=textStr;
+            {
+                span_data* span_data_ptr = std::get_if<span_data>(data_parent);
+                if(span_data_ptr) {
+                    span_data_ptr->text = textStr;
+                }
+            }
             break;
         case MD_TEXT_NULLCHAR:
-            data->text = QChar(0xFFFD); // Unicode replacement character
+            {
+                span_data* span_data_ptr = std::get_if<span_data>(data_parent);
+                if(span_data_ptr) {
+                    span_data_ptr->text = QChar(0xFFFD); // Unicode replacement character
+                }
+            }
             break;
         case MD_TEXT_BR: //we change the span type to a linebreak
             SPANTYPE(parent_span)=spantype::linebreak;
             break;
         case MD_TEXT_SOFTBR:// do nothing
-
             break;
         case MD_TEXT_ENTITY: //do nothing
             break;
         case MD_TEXT_CODE:
-            data->text=textStr;
+            {
+                span_data* span_data_ptr = std::get_if<span_data>(data_parent);
+                if(span_data_ptr) {
+                    span_data_ptr->text = textStr;
+                }
+            }
             break;
         case MD_TEXT_HTML://do nothing
             break;
         case MD_TEXT_LATEXMATH:
             {
-            latex_data* data_latex = std::get_if<latex_data>(data_parent);
-            QRgb argb_color = label->palette().text().color().rgba();
-            data_latex->render=getLatexRenderer(textStr, data_latex->isInline, state->textSize, argb_color);
-            data_latex->text=textStr;
+                latex_data* data_latex = std::get_if<latex_data>(data_parent);
+                if(data_latex) {
+                    QRgb argb_color = label->palette().text().color().rgba();
+                    data_latex->render=getLatexRenderer(textStr, data_latex->isInline, state->textSize, argb_color);
+                    data_latex->text=textStr;
+                }
             }
             break;
     }
@@ -507,7 +520,6 @@ void LatexLabel::parseMarkdown(const QString& text) {
         m_segments = std::move(state.segments);
 
         //populate m_display_list
-
         QFontMetricsF fontMetrics = QFontMetricsF(getFont(font_type::normal));
         qreal lineHeight = fontMetrics.lineSpacing();
         qreal x = margin_left;
@@ -696,7 +708,7 @@ void LatexLabel::renderSpan(const Element& segment, qreal& x, qreal& y, qreal mi
         qreal latexY = y - (renderHeight - data.render->getDepth());
         int width=data.render->getWidth();
         int height= data.render->getHeight();
-        m_display_list.push_back(Fragment(QRect(x,latexY,width,height),data.render,data.text,data.isInline));
+        addLatex(x, latexY, width, height, data.render, data.text, data.isInline);
 
 
 
@@ -711,9 +723,16 @@ void LatexLabel::renderSpan(const Element& segment, qreal& x, qreal& y, qreal mi
         return;
     }
 
-    //regular text
-    span_data data = std::get<span_data>(segment.data);
-    QString text = data.text;
+
+    QString text;
+    if(type!=spantype::hyperlink){
+        text = std::get<span_data>(segment.data).text;
+    }
+    else{
+        link_data link_infos= std::get<link_data>(segment.data);
+        text=link_infos.url;
+    }
+
 
 
 
@@ -735,7 +754,7 @@ void LatexLabel::renderSpan(const Element& segment, qreal& x, qreal& y, qreal mi
             x = min_x;
             y += metrics.lineSpacing();
         }
-        m_display_list.push_back(Fragment(QRect(x,y-metrics.ascent(),wordWidth+1,metrics.height()),word,font));
+        addText(x, y-metrics.ascent(), wordWidth+1, metrics.height(), word, font);
         x += totalWidth;
     }
 }
@@ -777,7 +796,7 @@ void LatexLabel::renderBlock(const Element& segment, qreal& x, qreal& y, qreal m
         case MD_BLOCK_HR:{
             // Draw horizontal line
             y += 2*lineHeight;
-            m_display_list.push_back(Fragment(QRect(x,y,width()-5,y),QPoint(width()-5,y)));
+            addLine(x, y, width()-5, y, QPoint(width()-5, y));
             y += 2*lineHeight;
             break;
         }
@@ -826,7 +845,7 @@ void LatexLabel::renderListElement(const Element& segment, qreal& x, qreal& y, i
         //adjust x position based on marker width
         QFontMetrics metrics(baseFont);
         qreal markerWidth = metrics.horizontalAdvance(marker);
-        m_display_list.push_back(Fragment(QRect(x,y-metrics.ascent(),markerWidth,metrics.height()),marker,baseFont));
+        addText(x, y-metrics.ascent(), markerWidth, metrics.height(), marker, baseFont);
 
 
         x += markerWidth + 2.0;
@@ -896,33 +915,54 @@ void LatexLabel::renderHeading(const Element& segment, qreal& x, qreal& y, qreal
 }
 
 void LatexLabel::renderCodeBlock(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight) {
-
+    x+=15;
+    y+=15;
     //Set code font and assemble full text
     QFont font = getFont(&segment);
-    QString full_text;
-    for(const Element* child : segment.children) {
-        if(child != nullptr && child->type == DisplayType::span && SPANTYPE(child) == spantype::code) {
-            QString chunk = std::get<span_data>(child->data).text;
-            full_text += chunk;
-        }
-    }
-
-    //Estimate widget rect
     font.setPointSize(m_textSize);
     QFontMetrics fm(font);
-    int line_height = fm.lineSpacing();
-    int line_count = full_text.count('\n') + 1;
-    int content_height =46+ fm.ascent()+std::max(line_height * line_count, line_height);
-    QRect block_rect(min_x, y - fm.ascent(), max_x - x, content_height);
 
-    QString language = std::get<code_block_data>(segment.data).language;
+    int header_padding=4;
+    int headerHeight = fm.height()+2*header_padding;
+
+
+    unsigned lineCount =0;
+    for(const Element* child :segment.children){
+        if(std::get<span_data> (child->data).text=="\n")
+            lineCount++;
+    }
+    int content_height=fm.ascent()+fm.lineSpacing()*lineCount+headerHeight;
+    QRect background(x,y-fm.ascent()-5,max_x-2*x,content_height+fm.descent()+10);
+    addRoundedRect(x, y-fm.ascent()-5, max_x-2*x, content_height+fm.descent()+10, background, 10, QPalette::ColorRole::Base);
+
+    QRect header_background(x,y-fm.ascent()-5,max_x-2*x,headerHeight);
+    addRoundedRect(x, y-fm.ascent()-5, max_x-2*x, headerHeight, header_background, 10, 10, 0, 0, QPalette::ColorRole::WindowText);
+
+
+
+    y+=headerHeight;
+
+    x+=10;
+
+
+
+    for(const Element* child : segment.children) {
+        //high max_x to prevent wrapping
+        renderSpan(*child, x, y, min_x+10+15, 10000, lineHeight);
+    }
+
+    code_block_data data = std::get<code_block_data>(segment.data);
+    QString language;
+
+    language = data.language;
 
     //Create embedded code widget with horizontal scrolling and copy button
-    create_code_block_widget(block_rect, full_text, font, language);
+    //create_code_block_widget(block_rect, full_text, font, language);
 
     //Advance layout positions
-    y += content_height;
-    x = 5.0;
+    y+=fm.lineSpacing();
+    y+=10;
+    x = min_x;
 }
 
 void LatexLabel::renderBlockquote(const Element& segment, qreal& x, qreal& y, qreal min_x, qreal max_x, qreal& lineHeight) {
@@ -950,7 +990,7 @@ void LatexLabel::renderBlockquote(const Element& segment, qreal& x, qreal& y, qr
 
     //draw line left of quote
     QPoint endpoint=QPoint(startX-5, y-metrics.height() + metrics.descent());
-    m_display_list.push_back(Fragment(QRect(startX-5, startY - metrics.ascent(),3,y),endpoint,3));
+    addLine(startX-5, startY - metrics.ascent(), 3, y, endpoint, 3);
 
     // Reset position and add spacing after blockquote
     x = min_x;
@@ -1130,7 +1170,7 @@ void LatexLabel::renderTable(const Element& segment, qreal& x, qreal& y, qreal m
             Element* cell =row->children[j];
 
             QRect cell_border =QRect(x,y-fm.ascent()-padding,max_width_of_col[j]+2*padding,max_height_of_row[i]+2*padding);
-            m_display_list.push_back(Fragment(cell_border,cell_border,0));
+            addRoundedRect(x, y-fm.ascent()-padding, max_width_of_col[j]+2*padding, max_height_of_row[i]+2*padding, cell_border, 0, QPalette::ColorRole::Window);
             int cell_start_x=x;
             int cell_start_y=y;
             x+=padding;
@@ -1204,7 +1244,35 @@ void LatexLabel::paintEvent(QPaintEvent* event){
             }
             case fragment_type::rounded_rect:{
                 frag_rrect_data* data = (frag_rrect_data*) f.data;
-                painter.drawRoundedRect(data->rect,data->radius,data->radius);
+                QBrush backgroundBrush = palette().brush(data->background);
+                painter.setBrush(backgroundBrush);
+                painter.setPen(palette().windowText().color());
+
+                // Create custom rounded rectangle with individual corner radii
+                QPainterPath path;
+                QRectF rect = data->rect;
+                qreal x = rect.x();
+                qreal y = rect.y();
+                qreal w = rect.width();
+                qreal h = rect.height();
+
+                qreal tl = qMin(data->topLeftRadius, qMin(w/2, h/2));
+                qreal tr = qMin(data->topRightRadius, qMin(w/2, h/2));
+                qreal bl = qMin(data->bottomLeftRadius, qMin(w/2, h/2));
+                qreal br = qMin(data->bottomRightRadius, qMin(w/2, h/2));
+
+                path.moveTo(x + tl, y);
+                path.lineTo(x + w - tr, y);
+                if (tr > 0) path.arcTo(x + w - 2*tr, y, 2*tr, 2*tr, 90, -90);
+                path.lineTo(x + w, y + h - br);
+                if (br > 0) path.arcTo(x + w - 2*br, y + h - 2*br, 2*br, 2*br, 0, -90);
+                path.lineTo(x + bl, y + h);
+                if (bl > 0) path.arcTo(x, y + h - 2*bl, 2*bl, 2*bl, 270, -90);
+                path.lineTo(x, y + tl);
+                if (tl > 0) path.arcTo(x, y, 2*tl, 2*tl, 180, -90);
+                path.closeSubpath();
+
+                painter.drawPath(path);
                 break;
             }
             case fragment_type::text:{
@@ -1552,4 +1620,25 @@ void LatexLabel::keyPressEvent(QKeyEvent* event){
 
     // Call parent implementation for other keys
     QWidget::keyPressEvent(event);
+}
+
+// Fragment creation helper methods for better readability
+void LatexLabel::addText(qreal x, qreal y, qreal width, qreal height, const QString& text, const QFont& font) {
+    m_display_list.push_back(Fragment(QRect(x, y, width, height), text, font));
+}
+
+void LatexLabel::addLatex(qreal x, qreal y, qreal width, qreal height, tex::TeXRender* render, const QString& text, bool isInline) {
+    m_display_list.push_back(Fragment(QRect(x, y, width, height), render, text, isInline));
+}
+
+void LatexLabel::addLine(qreal x, qreal y, qreal width, qreal height, const QPoint& to, int lineWidth) {
+    m_display_list.push_back(Fragment(QRect(x, y, width, height), to, lineWidth));
+}
+
+void LatexLabel::addRoundedRect(qreal x, qreal y, qreal width, qreal height, const QRect& rect, qreal radius, QPalette::ColorRole bg) {
+    m_display_list.push_back(Fragment(QRect(x, y, width, height), rect, radius, bg));
+}
+
+void LatexLabel::addRoundedRect(qreal x, qreal y, qreal width, qreal height, const QRect& rect, qreal tl, qreal tr, qreal bl, qreal br, QPalette::ColorRole bg) {
+    m_display_list.push_back(Fragment(QRect(x, y, width, height), rect, tl, tr, bl, br, bg));
 }

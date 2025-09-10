@@ -57,7 +57,19 @@ struct frag_line_data{
 };
 struct frag_rrect_data{
     QRect rect;
-    qreal radius;
+    qreal topLeftRadius;
+    qreal topRightRadius;
+    qreal bottomLeftRadius;
+    qreal bottomRightRadius;
+    QPalette::ColorRole background;
+
+    // Constructor with individual corner radii
+    frag_rrect_data(QRect r, qreal tl, qreal tr, qreal bl, qreal br, QPalette::ColorRole bg)
+        : rect(r), topLeftRadius(tl), topRightRadius(tr), bottomLeftRadius(bl), bottomRightRadius(br), background(bg) {}
+
+    // Constructor with uniform radius for all corners
+    frag_rrect_data(QRect r, qreal radius, QPalette::ColorRole bg)
+        : rect(r), topLeftRadius(radius), topRightRadius(radius), bottomLeftRadius(radius), bottomRightRadius(radius), background(bg) {}
 };
 struct frag_latex_data{
     tex::TeXRender* render;
@@ -73,9 +85,13 @@ typedef struct Fragment{
         //text constructor
         data = new frag_text_data(text,font);
     }
-    Fragment(QRect bounding_box, QRect rect,int radius):bounding_box(bounding_box),is_highlighted(false),type(fragment_type::rounded_rect){
+    Fragment(QRect bounding_box, QRect rect,int radius,QPalette::ColorRole bg):bounding_box(bounding_box),is_highlighted(false),type(fragment_type::rounded_rect){
         //rounded rect constructor
-        data = new frag_rrect_data(rect,radius);
+        data = new frag_rrect_data(rect,radius,bg);
+    }
+    Fragment(QRect bounding_box, QRect rect, qreal tl, qreal tr, qreal bl, qreal br, QPalette::ColorRole bg):bounding_box(bounding_box),is_highlighted(false),type(fragment_type::rounded_rect){
+        //rounded rect constructor with individual corner radii
+        data = new frag_rrect_data(rect,tl,tr,bl,br,bg);
     }
     Fragment(QRect bounding_box, QPoint to, int width = 1): bounding_box(bounding_box),is_highlighted(false), type(fragment_type::line){
         //line constructor
@@ -154,7 +170,11 @@ typedef struct Fragment{
                             .arg(rect_data->rect.y())
                             .arg(rect_data->rect.width())
                             .arg(rect_data->rect.height());
-                result += QString(", radius: %1").arg(rect_data->radius);
+                result += QString(", radii: (tl:%1,tr:%2,bl:%3,br:%4)")
+                            .arg(rect_data->topLeftRadius)
+                            .arg(rect_data->topRightRadius)
+                            .arg(rect_data->bottomLeftRadius)
+                            .arg(rect_data->bottomRightRadius);
                 break;
             }
         }
@@ -234,7 +254,11 @@ inline std::ostream& operator<<(std::ostream& os, const Fragment& fragment) {
                         .arg(rect_data->rect.y())
                         .arg(rect_data->rect.width())
                         .arg(rect_data->rect.height());
-            result += QString(", radius: %1").arg(rect_data->radius);
+            result += QString(", radii: (tl:%1,tr:%2,bl:%3,br:%4)")
+                        .arg(rect_data->topLeftRadius)
+                        .arg(rect_data->topRightRadius)
+                        .arg(rect_data->bottomLeftRadius)
+                        .arg(rect_data->bottomRightRadius);
             break;
         }
     }
@@ -335,6 +359,13 @@ private:
     //Helpers for managing embedded code block widgets
     void clear_code_block_widgets();
     void create_code_block_widget(const QRect& rect, const QString& text, const QFont& font, const QString& language = QString());
+
+    // Fragment creation helper methods for better readability
+    void addText(qreal x, qreal y, qreal width, qreal height, const QString& text, const QFont& font);
+    void addLatex(qreal x, qreal y, qreal width, qreal height, tex::TeXRender* render, const QString& text, bool isInline);
+    void addLine(qreal x, qreal y, qreal width, qreal height, const QPoint& to, int lineWidth = 1);
+    void addRoundedRect(qreal x, qreal y, qreal width, qreal height, const QRect& rect, qreal radius, QPalette::ColorRole bg);
+    void addRoundedRect(qreal x, qreal y, qreal width, qreal height, const QRect& rect, qreal tl, qreal tr, qreal bl, qreal br, QPalette::ColorRole bg);
 
 protected:
     void paintEvent(QPaintEvent* event) override;

@@ -211,8 +211,8 @@ int main(int argc, char* argv[]){
             QString content = in.readAll();
             file.close();
             label->setText(content);
-            start_text_streaming(content, label);
-            //label->printSegmentsStructure();
+            //start_text_streaming(content, label);
+            label->printSegmentsStructure();
 
             // Save the selected file to settings
             settings.setValue("lastSelectedFile", selectedFile);
