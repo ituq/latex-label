@@ -1,4 +1,5 @@
 #include "LatexLabel.h"
+#include "Fragment.h"
 #include "platform/qt/graphic_qt.h"
 #include "utils/enums.h"
 #include <QRegularExpression>
@@ -20,6 +21,8 @@
 #include <md4c.h>
 #include <variant>
 #include <vector>
+#include "latex.h"
+#include "core/formula.h"
 
 static double widget_height=200;
 
@@ -35,8 +38,10 @@ LatexLabel::LatexLabel(QWidget* parent) : QWidget(parent), _render(nullptr), m_t
 
 LatexLabel::~LatexLabel(){
     //Clean up all segments and their children
-    clear_code_block_widgets();
     cleanup_segments(m_segments);
+    for(QPushButton* button: copy_buttons){
+        button->deleteLater();
+    }
 }
 QSize LatexLabel::sizeHint() const{
     //Return a flexible size hint that works well with scroll areas
@@ -488,7 +493,6 @@ void LatexLabel::cleanup_segments(std::vector<Element*>& segments) {
 
 void LatexLabel::parseMarkdown(const QString& text) {
     //Clean up previous segments
-    clear_code_block_widgets();
     cleanup_segments(m_segments);
 
     // Set up parser state
@@ -517,6 +521,8 @@ void LatexLabel::parseMarkdown(const QString& text) {
     int result = md_parse(textBytes.constData(), textBytes.size(), &parser, &extendedState);
 
     if(result == 0) {
+        currCodeBlock=0;
+
         m_segments = std::move(state.segments);
 
         //populate m_display_list
@@ -671,7 +677,18 @@ void LatexLabel::renderSpan(const Element& segment, qreal& x, qreal& y, qreal mi
         font = getFont(&segment);
     }
     spantype type = *(spantype*)segment.subtype;
-    QColor color = type==spantype::hyperlink ? Qt::blue : Qt::black;
+    QPalette::ColorRole colorRole;
+    switch(type) {
+        case spantype::hyperlink:
+            colorRole = QPalette::Link;
+            break;
+        case spantype::code:
+            colorRole = QPalette::WindowText;
+            break;
+        default:
+            colorRole = QPalette::Text;
+            break;
+    }
 
 
 
@@ -754,7 +771,7 @@ void LatexLabel::renderSpan(const Element& segment, qreal& x, qreal& y, qreal mi
             x = min_x;
             y += metrics.lineSpacing();
         }
-        addText(x, y-metrics.ascent(), wordWidth+1, metrics.height(), word, font);
+        addText(x, y-metrics.ascent(), wordWidth+1, metrics.height(), word, font, colorRole);
         x += totalWidth;
     }
 }
@@ -845,7 +862,7 @@ void LatexLabel::renderListElement(const Element& segment, qreal& x, qreal& y, i
         //adjust x position based on marker width
         QFontMetrics metrics(baseFont);
         qreal markerWidth = metrics.horizontalAdvance(marker);
-        addText(x, y-metrics.ascent(), markerWidth, metrics.height(), marker, baseFont);
+        addText(x, y-metrics.ascent(), markerWidth, metrics.height(), marker, baseFont, QPalette::Text);
 
 
         x += markerWidth + 2.0;
@@ -914,55 +931,128 @@ void LatexLabel::renderHeading(const Element& segment, qreal& x, qreal& y, qreal
 
 }
 
+void LatexLabel::wheelEvent(QWheelEvent *event){
+    QWidget::wheelEvent(event);
+    QPoint pos = event->position().toPoint();
+    for(int i=0;i<code_block_info.size();i++){
+        layoutInfoCodeBlock& info =code_block_info.at(i);
+        if(info.boundingBox.contains(pos)){
+            info.shift+=event->angleDelta().x();
+            update(info.boundingBox);
+            continue;
+        }
+    }
+
+}
+
 void LatexLabel::renderCodeBlock(const Element& segment, qreal& x, qreal& y, qreal min_x,qreal max_x, qreal& lineHeight) {
     x+=15;
-    y+=15;
+
+    int code_padding=10;
     //Set code font and assemble full text
     QFont font = getFont(&segment);
-    font.setPointSize(m_textSize);
-    QFontMetrics fm(font);
-
-    int header_padding=4;
-    int headerHeight = fm.height()+2*header_padding;
+    QFont languageFont("Arial",m_textSize);
 
 
-    unsigned lineCount =0;
+    int header_padding=8;
+    QFontMetrics fm_header(languageFont);
+    int headerHeight = fm_header.height()+2*header_padding;
+
+    //draw background
+    unsigned lineCount = 1;
+    QString text;
     for(const Element* child :segment.children){
-        if(std::get<span_data> (child->data).text=="\n")
+        QString child_text=std::get<span_data> (child->data).text;
+        text+=child_text;
+        if(child_text=="\n")
             lineCount++;
     }
-    int content_height=fm.ascent()+fm.lineSpacing()*lineCount+headerHeight;
-    QRect background(x,y-fm.ascent()-5,max_x-2*x,content_height+fm.descent()+10);
-    addRoundedRect(x, y-fm.ascent()-5, max_x-2*x, content_height+fm.descent()+10, background, 10, QPalette::ColorRole::Base);
+    QFont code_font("Monaco",m_textSize);
+    QFontMetrics fm(code_font);
+    int content_height=fm.ascent()+fm.lineSpacing()*lineCount;
+    addRoundedRect(x,y,max_x-2*x,content_height+headerHeight, 10, QPalette::ColorRole::Base,QPalette::ColorRole::Mid);
+    //draw header
+    addRoundedRect(x, y, max_x-2*x, headerHeight, 10, 10, 0, 0, QPalette::ColorRole::Mid,QPalette::ColorRole::Mid);
 
-    QRect header_background(x,y-fm.ascent()-5,max_x-2*x,headerHeight);
-    addRoundedRect(x, y-fm.ascent()-5, max_x-2*x, headerHeight, header_background, 10, 10, 0, 0, QPalette::ColorRole::WindowText);
+    QString language= std::get<code_block_data>(segment.data).language;
+    if(language==""){
+        language=QString("%1 Lines").arg(lineCount);
+    }
+
+    languageFont.setPointSize(m_textSize);
+    //y+=fm_header.descent();
+
+
+    addText(x+header_padding, y+headerHeight/2.0 - fm_header.height()/2.0, fm_header.horizontalAdvance(language), fm_header.height(), language, languageFont, QPalette::HighlightedText);
+
+    QPushButton* copyButton;
+    int buttonWidth = 50;
+    int buttonHeight = 20;
+    int buttonPadding=(headerHeight-buttonHeight)/2;
+    int buttonX = max_x - x - buttonWidth-buttonPadding;
+    //Ensure code_block_info entry exists and update bounding box on every layout
+    QRect block_rect(x,y,max_x-2*x,content_height+headerHeight);
+    if(currCodeBlock < code_block_info.size()){
+        code_block_info[currCodeBlock].boundingBox = block_rect;
+    } else {
+        code_block_info.push_back({0,false,block_rect});
+    }
+
+
+    if(currCodeBlock<copy_buttons.size()){
+        copyButton=copy_buttons[currCodeBlock];
+    }
+    else{
+        copyButton=new QPushButton("Copy", this);
+        copy_buttons.push_back(copyButton);
+        connect(copyButton, &QPushButton::clicked, this, [text]() {
+            QGuiApplication::clipboard()->setText(text);
+        });
+        copyButton->setStyleSheet(QString("QPushButton { background-color: palette(button); border-radius: %1px; padding: 2px; } QPushButton:hover { background-color: palette(light); }").arg(5));
+        copyButton->show();
+    }
+
+    copyButton->setGeometry(buttonX, y+(headerHeight/2.0)-(buttonHeight/2.0), buttonWidth, buttonHeight);
 
 
 
-    y+=headerHeight;
+
+    y+=headerHeight+10;
 
     x+=10;
 
 
+    //render text
+    int rightBorderX=max_x-x;
+    int leftBorderX=x;
 
-    for(const Element* child : segment.children) {
-        //high max_x to prevent wrapping
-        renderSpan(*child, x, y, min_x+10+15, 10000, lineHeight);
+    for(const Element* child : segment.children) { // we know all children are spans of type code
+        QString line= std::get<span_data>(child->data).text;
+        QRect bounding(x,y,fm.horizontalAdvance(line),fm.height());
+        QRect clip(leftBorderX-code_padding,y,rightBorderX-leftBorderX+2*code_padding,fm.height());
+        addClippedText(clip,bounding, line, currCodeBlock);
+        x+=fm.horizontalAdvance(line);
+        if(x>rightBorderX){
+            code_block_info[currCodeBlock].isOverflowing=true;
+        }
+        if(line=="\n" && child!=segment.children.back()){
+            y+=fm.lineSpacing();
+            x=leftBorderX;
+        }
+
+        //renderSpan(*child, x, y, min_x+10+15, max_x-x, lineHeight);
     }
 
-    code_block_data data = std::get<code_block_data>(segment.data);
-    QString language;
 
-    language = data.language;
 
     //Create embedded code widget with horizontal scrolling and copy button
     //create_code_block_widget(block_rect, full_text, font, language);
 
     //Advance layout positions
     y+=fm.lineSpacing();
-    y+=10;
+    y+=40;
     x = min_x;
+    currCodeBlock++;
 }
 
 void LatexLabel::renderBlockquote(const Element& segment, qreal& x, qreal& y, qreal min_x, qreal max_x, qreal& lineHeight) {
@@ -1169,8 +1259,7 @@ void LatexLabel::renderTable(const Element& segment, qreal& x, qreal& y, qreal m
         for (int j=0;j<row->children.size();j++) {
             Element* cell =row->children[j];
 
-            QRect cell_border =QRect(x,y-fm.ascent()-padding,max_width_of_col[j]+2*padding,max_height_of_row[i]+2*padding);
-            addRoundedRect(x, y-fm.ascent()-padding, max_width_of_col[j]+2*padding, max_height_of_row[i]+2*padding, cell_border, 0, QPalette::ColorRole::Window);
+            addRoundedRect(x, y-fm.ascent()-padding, max_width_of_col[j]+2*padding, max_height_of_row[i]+2*padding, 0, QPalette::ColorRole::Window);
             int cell_start_x=x;
             int cell_start_y=y;
             x+=padding;
@@ -1213,12 +1302,18 @@ void LatexLabel::paintEvent(QPaintEvent* event){
 
 
     for(Fragment& f: m_display_list){
-        if(!area.intersects(f.bounding_box)) continue;
+        if(!area.intersects(f.bounding_box)&&f.type!=fragment_type::clipped_text) continue;
         if(f.is_highlighted){
             painter.save();
             painter.setPen(Qt::NoPen);
             painter.setBrush(palette().highlight());
-            painter.drawRect(f.bounding_box);
+            if(f.type==fragment_type::clipped_text){
+                int shift = code_block_info[((clipped_text_data*)f.data)->codeBlock_id].shift;
+                painter.drawRect(f.bounding_box.adjusted(shift, 0, shift, 0));
+            }
+            else{
+                painter.drawRect(f.bounding_box);
+            }
             painter.restore();
             painter.setPen(palette().highlightedText().color());
         }
@@ -1246,7 +1341,7 @@ void LatexLabel::paintEvent(QPaintEvent* event){
                 frag_rrect_data* data = (frag_rrect_data*) f.data;
                 QBrush backgroundBrush = palette().brush(data->background);
                 painter.setBrush(backgroundBrush);
-                painter.setPen(palette().windowText().color());
+                painter.setPen(palette().brush(data->stroke).color());
 
                 // Create custom rounded rectangle with individual corner radii
                 QPainterPath path;
@@ -1278,9 +1373,28 @@ void LatexLabel::paintEvent(QPaintEvent* event){
             case fragment_type::text:{
                 frag_text_data* data = (frag_text_data*) f.data;
                 painter.setFont(data->font);
-                painter.setPen(palette().text().color());
+                painter.setPen(palette().brush(data->color).color());
                 painter.drawText(f.bounding_box,data->text);
                 break;
+            }
+            case fragment_type::clipped_text:{
+                int shift = code_block_info[((clipped_text_data*)f.data)->codeBlock_id].shift;
+                if(!area.intersects(f.bounding_box.adjusted(shift, 0, shift, 0))){
+                    continue;
+                }
+                painter.save();
+                painter.setPen(palette().text().color());
+                QFont font("Monaco");
+                font.setPointSize(m_textSize);
+                painter.setFont(font);
+
+                clipped_text_data* data = (clipped_text_data*) f.data;
+                auto block_id=data->codeBlock_id;
+
+                painter.setClipRect(data->clipArea);
+                painter.drawText(f.bounding_box.adjusted(code_block_info[block_id].shift, 0, 1000000, 1000000),data->text);
+
+                painter.restore();
             }
         }
         if(f.is_highlighted){
@@ -1336,7 +1450,6 @@ void LatexLabel::resizeEvent(QResizeEvent* event) {
 
     if(!m_text.isEmpty() && event->oldSize().width() != event->size().width()) {
         deleteDisplayList();
-        clear_code_block_widgets();
         parseMarkdown(m_text);//this is expensive, need to find way to avoid without dangling latex pointers in m_segments
         update();
     }
@@ -1360,7 +1473,6 @@ void LatexLabel::appendText(QString& text){
     adjustSize();
 }
 void LatexLabel::deleteDisplayList(){
-    if(m_display_list.empty()) return;
     for (Fragment& f : m_display_list) {
         switch (f.type) {
             case fragment_type::latex:{
@@ -1384,6 +1496,11 @@ void LatexLabel::deleteDisplayList(){
                 delete data;
                 break;
             }
+            case fragment_type::clipped_text:{
+                clipped_text_data* data = (clipped_text_data*) f.data;
+                delete data;
+                break;
+            }
         }
 
     }
@@ -1392,8 +1509,8 @@ void LatexLabel::deleteDisplayList(){
 
 void LatexLabel::setText(QString text){
     m_raw_text.clear();
+    code_block_info.clear();
     deleteDisplayList();
-    clear_code_block_widgets();
     m_display_list.clear();
     m_text = text;
     clock_t start = clock();
@@ -1409,20 +1526,6 @@ void LatexLabel::setText(QString text){
     adjustSize();
 }
 
-void LatexLabel::clear_code_block_widgets(){
-    for(auto* widget : m_code_widgets){
-        if(widget){ widget->deleteLater(); }
-    }
-    m_code_widgets.clear();
-}
-
-void LatexLabel::create_code_block_widget(const QRect& rect, const QString& text, const QFont& font, const QString& language){
-    CodeBlockWidget* widget = new CodeBlockWidget(text,m_textSize, language, this);
-    widget->setGeometry(rect.adjusted(8, 8, -8, -8));
-    widget->show();
-
-    m_code_widgets.push_back(widget);
-}
 
 void LatexLabel::printSegmentsStructure() const {
     qDebug() << "=== m_segments Structure ===";
@@ -1579,7 +1682,14 @@ void LatexLabel::mousePressEvent(QMouseEvent* event) {
     if(m_selected){
         //remove selection
         m_selected->is_highlighted=false;
-        QRect selected_bb=m_selected->bounding_box;
+        QRect selected_bb;
+        if(m_selected->type==fragment_type::clipped_text){
+            int shift = code_block_info[((clipped_text_data*)m_selected->data)->codeBlock_id].shift;
+            selected_bb=m_selected->bounding_box.adjusted(shift, 0, shift, 0);
+        }
+        else{
+            selected_bb=m_selected->bounding_box;
+        }
         m_selected=nullptr;
         update(selected_bb);
     }
@@ -1592,15 +1702,28 @@ void LatexLabel::mouseReleaseEvent(QMouseEvent* event) {
 }
 void LatexLabel::mouseDoubleClickEvent(QMouseEvent* event){
     for(Fragment& f :m_display_list){
-        if(f.type==fragment_type::line||
-            f.type==fragment_type::rounded_rect||
-            !f.bounding_box.contains(event->pos()))
-            continue;
-        f.is_highlighted=true;
-        m_selected=&f;
+        switch(f.type){
+            case fragment_type::clipped_text:{
+                int shift = code_block_info[((clipped_text_data*)f.data)->codeBlock_id].shift;
+                if(f.bounding_box.adjusted(shift, 0, shift, 0).contains(event->pos())){
+                    f.is_highlighted=true;
+                    m_selected=&f;
+                    update(f.bounding_box.adjusted(shift, 0, shift, 0));
+                }
+                break;
+            }
+            case fragment_type::line:
+            case fragment_type::rounded_rect:
+                continue;
+            default:
+                if(!f.bounding_box.contains(event->pos()))
+                    continue;
+                f.is_highlighted=true;
+                m_selected=&f;
+                update(f.bounding_box);
+                break;
+        }
 
-        update(f.bounding_box);
-        break;
     }
 
     // Make sure the widget gets focus when clicked
@@ -1623,8 +1746,8 @@ void LatexLabel::keyPressEvent(QKeyEvent* event){
 }
 
 // Fragment creation helper methods for better readability
-void LatexLabel::addText(qreal x, qreal y, qreal width, qreal height, const QString& text, const QFont& font) {
-    m_display_list.push_back(Fragment(QRect(x, y, width, height), text, font));
+void LatexLabel::addText(qreal x, qreal y, qreal width, qreal height, const QString& text, const QFont& font, QPalette::ColorRole color) {
+    m_display_list.push_back(Fragment(QRect(x, y, width, height), text, font, color));
 }
 
 void LatexLabel::addLatex(qreal x, qreal y, qreal width, qreal height, tex::TeXRender* render, const QString& text, bool isInline) {
@@ -1635,10 +1758,15 @@ void LatexLabel::addLine(qreal x, qreal y, qreal width, qreal height, const QPoi
     m_display_list.push_back(Fragment(QRect(x, y, width, height), to, lineWidth));
 }
 
-void LatexLabel::addRoundedRect(qreal x, qreal y, qreal width, qreal height, const QRect& rect, qreal radius, QPalette::ColorRole bg) {
-    m_display_list.push_back(Fragment(QRect(x, y, width, height), rect, radius, bg));
+void LatexLabel::addRoundedRect(qreal x, qreal y, qreal width, qreal height, qreal radius, QPalette::ColorRole bg, QPalette::ColorRole stroke) {
+    QRect r(x,y,width,height);
+    m_display_list.push_back(Fragment(QRect(x, y, width, height), r, radius, bg, stroke));
 }
 
-void LatexLabel::addRoundedRect(qreal x, qreal y, qreal width, qreal height, const QRect& rect, qreal tl, qreal tr, qreal bl, qreal br, QPalette::ColorRole bg) {
-    m_display_list.push_back(Fragment(QRect(x, y, width, height), rect, tl, tr, bl, br, bg));
+void LatexLabel::addRoundedRect(qreal x, qreal y, qreal width, qreal height, qreal tl, qreal tr, qreal bl, qreal br, QPalette::ColorRole bg, QPalette::ColorRole stroke) {
+    QRect r(x,y,width,height);
+    m_display_list.push_back(Fragment(QRect(x, y, width, height), r, tl, tr, bl, br, bg, stroke));
+}
+void LatexLabel::addClippedText(QRect clip, QRect bounding, QString& text,int id){
+    m_display_list.push_back(Fragment(clip,bounding,text,id));
 }

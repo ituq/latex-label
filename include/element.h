@@ -1,3 +1,5 @@
+#pragma once
+
 #include <md4c.h>
 #include <variant>
 #include <vector>

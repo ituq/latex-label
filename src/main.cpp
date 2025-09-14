@@ -212,7 +212,7 @@ int main(int argc, char* argv[]){
             file.close();
             label->setText(content);
             //start_text_streaming(content, label);
-            label->printSegmentsStructure();
+            //label->printSegmentsStructure();
 
             // Save the selected file to settings
             settings.setValue("lastSelectedFile", selectedFile);
