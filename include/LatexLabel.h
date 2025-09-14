@@ -24,6 +24,7 @@ struct layoutInfoCodeBlock{
     bool isOverflowing;
     QRect boundingBox;
     int maxShift;
+    QPushButton* button;
 };
 
 
@@ -72,9 +73,8 @@ private:
     double m_leading=3.0;
     Fragment* m_selected=nullptr;
 
-    std::vector<QPushButton*> copy_buttons;
-    int currCodeBlock=0;
-    std::vector<layoutInfoCodeBlock> code_block_info;
+    int m_curr_code_block=0;
+    std::vector<layoutInfoCodeBlock> m_code_block_info;
 
     int margin_left=5, margin_right=5,margin_top=5,margin_bottom=5;
 
