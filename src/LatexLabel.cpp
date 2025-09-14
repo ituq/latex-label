@@ -6,6 +6,7 @@
 #include <QFontMetrics>
 #include <QSizePolicy>
 #include <QDebug>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -936,8 +937,20 @@ void LatexLabel::wheelEvent(QWheelEvent *event){
     QPoint pos = event->position().toPoint();
     for(int i=0;i<code_block_info.size();i++){
         layoutInfoCodeBlock& info =code_block_info.at(i);
+
+        if(!info.isOverflowing){
+            continue;
+        }
         if(info.boundingBox.contains(pos)){
-            info.shift+=event->angleDelta().x();
+            if(info.shift+event->angleDelta().x()<info.maxShift){
+                info.shift=info.maxShift;
+            }
+            else if(info.shift+event->angleDelta().x()>0){
+                info.shift=0;
+            }
+            else{
+                info.shift+=event->angleDelta().x();
+            }
             update(info.boundingBox);
             continue;
         }
@@ -995,7 +1008,11 @@ void LatexLabel::renderCodeBlock(const Element& segment, qreal& x, qreal& y, qre
     if(currCodeBlock < code_block_info.size()){
         code_block_info[currCodeBlock].boundingBox = block_rect;
     } else {
-        code_block_info.push_back({0,false,block_rect});
+        layoutInfoCodeBlock info;
+        info.shift=0;
+        info.isOverflowing=false;
+        info.boundingBox=block_rect;
+        code_block_info.push_back(info);
     }
 
 
@@ -1025,23 +1042,30 @@ void LatexLabel::renderCodeBlock(const Element& segment, qreal& x, qreal& y, qre
     //render text
     int rightBorderX=max_x-x;
     int leftBorderX=x;
-
+    code_block_info[currCodeBlock].isOverflowing=false;
+    int maxLineWidth=0;
+    int currLineWidth=0;
     for(const Element* child : segment.children) { // we know all children are spans of type code
         QString line= std::get<span_data>(child->data).text;
         QRect bounding(x,y,fm.horizontalAdvance(line),fm.height());
         QRect clip(leftBorderX-code_padding,y,rightBorderX-leftBorderX+2*code_padding,fm.height());
         addClippedText(clip,bounding, line, currCodeBlock);
         x+=fm.horizontalAdvance(line);
-        if(x>rightBorderX){
-            code_block_info[currCodeBlock].isOverflowing=true;
-        }
+        currLineWidth+=fm.horizontalAdvance(line);
         if(line=="\n" && child!=segment.children.back()){
             y+=fm.lineSpacing();
             x=leftBorderX;
+            maxLineWidth=std::max(currLineWidth,maxLineWidth);
+            currLineWidth=0;
         }
 
-        //renderSpan(*child, x, y, min_x+10+15, max_x-x, lineHeight);
     }
+
+    maxLineWidth = std::max(currLineWidth, maxLineWidth);
+    auto& info = code_block_info.at(currCodeBlock);
+    info.isOverflowing=maxLineWidth>block_rect.width();
+    info.maxShift=std::min(-(maxLineWidth-block_rect.width()+2*code_padding),0);
+
 
 
 

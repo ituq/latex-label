@@ -23,6 +23,7 @@ struct layoutInfoCodeBlock{
     int shift;
     bool isOverflowing;
     QRect boundingBox;
+    int maxShift;
 };
 
 
